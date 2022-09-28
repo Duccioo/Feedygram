@@ -1,0 +1,6 @@
+python-telegram-bot
+export_to_telegraph
+html_telegraph_poster
+pyyaml
+telegram_util
+readee
