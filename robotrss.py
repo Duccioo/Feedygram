@@ -4,21 +4,35 @@
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
-    filters,
-    Updater,
     ContextTypes,
+    CallbackQueryHandler,
 )
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils.filehandler import FileHandler
 from utils.database import DatabaseHandler
 from utils.processing import BatchProcess
 from utils.feedhandler import FeedHandler
 import os
-import telegram
+from dotenv import load_dotenv
+
+import webpage2telegraph
+import random
+from utils.make_text import bip_bop, random_emoji, number_to_emoji
+
+
+load_dotenv()
 
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+
+
+def check_change_link(obj):
+    try:
+        if obj["option"] == "change_database":
+            return True
+    except:
+        return False
 
 
 class RobotRss(object):
@@ -28,7 +42,14 @@ class RobotRss(object):
         self.db = DatabaseHandler("database/datastore.db")
         self.fh = FileHandler("database/setub.sql")
 
-        self.updater = Application.builder().token(telegram_token).build()
+        self.bot = (
+            Application.builder()
+            .token(telegram_token)
+            .concurrent_updates(True)
+            .arbitrary_callback_data(True)
+            .build()
+        )
+        self.job_queue = self.bot.job_queue
 
         # Add Commands to bot
         self._addCommand(CommandHandler("start", self.start))
@@ -40,13 +61,20 @@ class RobotRss(object):
         self._addCommand(CommandHandler("get", self.get))
         self._addCommand(CommandHandler("remove", self.remove))
 
-        # Start the Bot
-        self.processing = BatchProcess(
-            database=self.db, update_interval=update_interval, bot=self.updater.bot
+        self.bot.add_handler(
+            CallbackQueryHandler(self.change_link_type, pattern=check_change_link)
         )
 
-        self.processing.start()
-        self.updater.run_polling()
+        self.bot.add_handler(CallbackQueryHandler(self.update_message))
+
+        # Start the Bot
+        self.processing = BatchProcess(
+            database=self.db, update_interval=update_interval, bot=self.bot
+        )
+
+        self.job_queue.run_repeating(self.processing.run, update_interval, first=1)
+
+        self.bot.run_polling()
 
     def _addCommand(self, command):
 
@@ -54,7 +82,7 @@ class RobotRss(object):
         Registers a new command to the bot
         """
 
-        self.updater.add_handler(command)
+        self.bot.add_handler(command)
 
     async def start(self, update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -62,17 +90,19 @@ class RobotRss(object):
         """
         telegram_user = update.message.from_user
 
-        await context.bot.send_message(
-            update.message.chat.id, text="Beep! seconds are over!"
-        )
-        print("asd", self.db.get_user(telegram_id=telegram_user.id))
-
         # Add new User if not exists
         if not self.db.get_user(telegram_id=telegram_user.id):
 
-            message = "Ciao! It's your first time? Well... Eeveryone has had a first time, so for start add a new Feeeed in your list with /add or instantly grab a feedgraph with the /get command "
-            await update.message.reply_text(message)
+            message = (
+                "Ciao👋! It's your first time😏?"
+                + bip_bop()
+                + "\nWell... Everyone has had a first time😌, so to start add a new Feeeed in your list with <b>/add</b>\n"
+                + "If you are lost send me <b>/help</b> then Then I'll give you some tips😜\n"
+                + bip_bop()
+            )
+            await update.message.reply_text(message, parse_mode="HTML")
 
+            # Aggiungo utente al database
             self.db.add_user(
                 telegram_id=telegram_user.id,
                 username=telegram_user.username,
@@ -83,64 +113,312 @@ class RobotRss(object):
                 is_active=1,
             )
 
+        # altrimenti se ho già segnato l'utente lo attivo (in caso fosse inattivo)
         self.db.update_user(telegram_id=telegram_user.id, is_active=1)
 
-        message = "You will now receive news! Use /help if you need some tips how to tell me what to do!"
-        await update.message.reply_text(message)
+        message = (
+            bip_bop()
+            + "OK Human! Now everything is ready"
+            + bip_bop()
+            + "\nUse <b>/help</b> if you need some tips!"
+        )
+        await update.message.reply_text(message, parse_mode="HTML")
+
+    async def update_message(self, update, context):
+        query = update.callback_query
+
+        await query.answer()
+
+        data = query.data
+
+        keyboard_telegraph = [
+            [
+                InlineKeyboardButton(
+                    "🤙Telegraph Link🤙",
+                    callback_data={
+                        "alias": data["alias"],
+                        "set_telegraph": True,
+                        "link": data["link"],
+                        "title": data["title"],
+                    },
+                ),
+            ],
+        ]
+
+        keyboard_normal = [
+            [
+                InlineKeyboardButton(
+                    "✳️Normal Link✳️",
+                    callback_data={
+                        "alias": data["alias"],
+                        "set_telegraph": False,
+                        "link": data["link"],
+                        "title": data["title"],
+                    },
+                )
+            ],
+        ]
+
+        set_telegraph = data["set_telegraph"]
+
+        if set_telegraph:
+            reply_markup = InlineKeyboardMarkup(keyboard_normal)
+            title_first = data["title"]
+            link_first = str(webpage2telegraph.transfer(data["link"]))
+            title_second = "Normal Link"
+            link_second = data["link"]
+        else:
+            reply_markup = InlineKeyboardMarkup(keyboard_telegraph)
+            title_first = data["title"]
+            link_first = data["link"]
+            title_second = "Telegraph Link"
+            link_second = str(webpage2telegraph.transfer(data["link"]))
+
+        list = [
+            "New Update! ",
+            "Something Change in ",
+            "Here's for you, from",
+            "Drin drin! ",
+            "News FROM ",
+        ]
+        message = (
+            "🔔"
+            + random.choice(list)
+            + "["
+            + data["alias"]
+            + "] \n------------------------\n <a href='"
+            + link_first
+            + "'>"
+            + title_first
+            + "</a>"
+            + "\n-------------------------\n<a href='"
+            + link_second
+            + "'>"
+            + "["
+            + title_second
+            + "]"
+            + "</a>"
+        )
+
+        try:
+            await query.edit_message_text(
+                text=message,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+
+        except:
+            print("dio porco")
+            # handle all other telegram related errors
+            pass
+
+    async def change_link_type(self, update, context):
+        query = update.callback_query
+        telegram_user = query.from_user
+        if query != None:
+            await query.answer()
+            data = query.data
+
+            # mi vado a prendere nel database se i link sono in versione telegraph
+            db_telegraph = self.db.get_user_bookmark(
+                telegram_user.id, alias=data["alias"]
+            )
+            print(db_telegraph)
+            if db_telegraph != None:
+                self.db.update_user_bookmark(
+                    telegram_user.id,
+                    url=data["url"],
+                    alias=data["alias"],
+                    telegraph=not db_telegraph[3],
+                )
+
+                if db_telegraph[3]:
+                    new_link = "Normal Link"
+                    old_link = "Telegraph Link"
+                else:
+                    new_link = "Telegraph Link"
+                    old_link = "Normal Link"
+                list = ["wonderful", "Marvelous"]
+                message = (
+                    random.choice(list)
+                    + "I change '"
+                    + data["alias"]
+                    + "' to send by default <b>"
+                    + new_link
+                    + "</b>!!\nIf you want to receive <b>"
+                    + old_link
+                    + "</b> click the button below!"
+                )
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🔙Change to " + old_link + "🔙",
+                            callback_data={
+                                "option": "change_database",
+                                "alias": data["alias"],
+                                "url": data["url"],
+                            },
+                        )
+                    ],
+                ]
+
+                await query.edit_message_text(
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
 
     async def add(self, update, context):
         # Adds a rss subscription to user
 
         telegram_user = update.message.from_user
         args = update.message.text.split()
-        print(len(args))
-        if len(args) != 3:
-            message = "Sorry! I could not add the entry! Please use the the command passing the following arguments:\n\n /add <url> <entryname> \n\n Here is a short example: \n\n /add http://www.feedforall.com/sample.xml ExampleEntry"
-            await update.message.reply_text(message)
+        list = [
+            "🍕Best site for cooking Pizza🍕",
+            "🍷Best Site for sciacquare una bottiglia di Brunello",
+            "🐶BauBau",
+            "😏HotSite.com",
+            "💩.it",
+            "😴generic_news_boooring_site🥱",
+            "🎮Games&Caipiroska🍹",
+        ]
+        if len(args) < 2:
+            message = (
+                "Oh nono! I could not add the entry😯!\n"
+                + bip_bop()
+                + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
+                + "Try to send a valid URL like this:"
+                + "\n\n"
+                + "<code>/add https://duccio.me/ "
+                + random.choice(list)
+                + "</code>"
+            )
+            await update.message.reply_text(
+                message,
+                parse_mode="HTML",
+            )
             return
 
         arg_url = FeedHandler.format_url_string(string=args[1])
-        arg_entry = args[2]
-
+        print(arg_url)
         # Check if argument matches url format
-        if not FeedHandler.is_parsable(url=arg_url):
+        is_parsable = FeedHandler.is_parsable(url=arg_url)
+        if is_parsable != True:
             message = (
-                "Sorry! It seems like '"
+                bip_bop()
+                + "Sorry! It seems like <code>"
                 + str(arg_url)
-                + "' doesn't provide an RSS news feed.. Have you tried another URL from that provider?"
+                + "</code> "
+                + str(is_parsable)
+                + "...😣.\n Have you tried other URLs?\n"
+                + "Try to send a valid URL like this:\n"
+                + "<code>/add https://duccio.me/ "
+                + random.choice(list)
+                + "</code>"
             )
-            await update.message.reply_text(message)
+            await update.message.reply_text(
+                message,
+                parse_mode="HTML",
+            )
             return
 
         # Check if entry does not exists
         entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
-        print(entries)
 
         if any(arg_url.lower() in entry for entry in entries):
             message = (
                 "Sorry, "
                 + telegram_user.first_name
-                + "! I already have that url with stored in your subscriptions."
+                + "!I already have that url with stored in your subscriptions😒"
+                + "\nAdd a new one like this:\n"
+                + "<code>/add https://duccio.me/ "
+                + random.choice(list)
+                + "</code>"
             )
-            await update.message.reply_text(message)
+            await update.message.reply_text(
+                message,
+                parse_mode="HTML",
+            )
             return
 
+        if len(args) == 2:
+            arg_entry = (
+                random_emoji()
+                + " "
+                + FeedHandler.get_feed_title(arg_url)
+                + " "
+                + random_emoji()
+            )
+            if arg_entry == False:
+                message = (
+                    bip_bop()
+                    + "mhh... I tried my best for create a title for that url but I can't...\n"
+                    + telegram_user.username
+                    + "try to resend <code> /add "
+                    + args[1]
+                    + "</code> and this time add a costum name!"
+                    + bip_bop()
+                    + "\nLike this: "
+                    + "<code>/add https://duccio.me/ "
+                    + random.choice(list)
+                    + "</code>"
+                )
+                await update.message.reply_text(
+                    message,
+                    parse_mode="HTML",
+                )
+
+        elif len(args) >= 3:
+            arg_entry = ""
+            for i in range(3, len(args)):
+                arg_entry = arg_entry + " " + args[i]
+        list1 = ["I'm stressed...😣", "I'm bored... 🥱", "I'm in love...🥰"]
         if any(arg_entry in entry for entry in entries):
             message = (
-                "Sorry! I already have an entry with name "
-                + arg_entry
-                + " stored in your subscriptions.. Please choose another entry name or delete the entry using '/remove "
-                + arg_entry
-                + "'"
+                "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAMEEE!!"
+                + bip_bop()
+                + "</b>\n\n...\n\nSorry 😥, "
+                + random.choice(list1)
+                + "\nTry to send my another feed like this:\n"
+                + "<code>/add https://duccio.me/ "
+                + random.choice(list)
+                + "</code>"
             )
-            await update.message.reply_text(message)
+            await update.message.reply_text(
+                message,
+                parse_mode="HTML",
+            )
             return
 
         self.db.add_user_bookmark(
             telegram_id=telegram_user.id, url=arg_url.lower(), alias=arg_entry
         )
-        message = "I successfully added " + arg_entry + " to your subscriptions!"
-        await update.message.reply_text(message)
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "🔗Change to Telegraph Link🔗",
+                    callback_data={
+                        "option": "change_database",
+                        "alias": arg_entry,
+                        "url": arg_url.lower(),
+                    },
+                )
+            ],
+        ]
+        message = (
+            "WOOW!!🤝"
+            + bip_bop()
+            + "\nI successfully added "
+            + arg_entry
+            + " to your subscriptions!"
+            + bip_bop()
+            + "\n👀Look! By default when I found a new post I try to send <b>Normal Link</b>.\n"
+            + "If you want to always receive <b>Telegraph Link</b> (to open with <u>Instant View</u>) click the button below"
+        )
+        await update.message.reply_text(
+            text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     async def get(self, update, context):
         """
@@ -190,7 +468,7 @@ class RobotRss(object):
                 await update.message.reply_text(message, parse_mode="HTML")
 
             except:
-                print("qowkoedkasopdkasopdkasopdkaspod")
+                print("errore")
                 # handle all other telegram related errors
                 pass
 
@@ -200,20 +478,30 @@ class RobotRss(object):
         """
 
         args = context.args
-        print(args)
 
         telegram_user = update.message.from_user
 
-        if len(args) != 1:
+        if len(args) < 1:
             message = "To remove a subscriptions from your list please use /remove <entryname>. To see all your subscriptions along with their entry names use /list !"
             await update.message.reply_text(message)
             return
 
-        entry = self.db.get_user_bookmark(telegram_id=telegram_user.id, alias=args[0])
+        entry_args = (" ").join(args[0:])
+        print(entry_args)
+
+        entry = self.db.get_user_bookmark(
+            telegram_id=telegram_user.id, alias=entry_args
+        )
 
         if entry:
             self.db.remove_user_bookmark(telegram_id=telegram_user.id, url=entry[0])
-            message = "I removed " + args[0] + " from your subscriptions!"
+            message = (
+                "Mhh..."
+                + bip_bop()
+                + "OK, I removed "
+                + entry_args
+                + " from your subscriptions!"
+            )
             await update.message.reply_text(message)
         else:
             message = (
@@ -230,24 +518,63 @@ class RobotRss(object):
 
         telegram_user = update.message.from_user
 
-        message = "Here is a list of all subscriptions I stored for you!"
-        await update.message.reply_text(message)
+        message = (
+            bip_bop()
+            + "🤖! Here is a list of all subscriptions <i>I stored for you</i>❤️!\nIf you want to change the default link click the button below!"
+            + bip_bop()
+        )
+        await update.message.reply_text(message, parse_mode="HTML")
 
         entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
 
-        for entry in entries:
-            message = "-->" + entry[1] + "\n " + entry[0]
-            await update.message.reply_text(message)
+        for index, entry in enumerate(entries):
+            db_telegraph = self.db.get_user_bookmark(telegram_user.id, alias=entry[1])
+            if db_telegraph[3]:
+                new_link = "Normal Link"
+                old_link = "Telegraph Link"
+            else:
+                new_link = "Telegraph Link"
+                old_link = "Normal Link"
 
-    def help(self, update):
+            message = (
+                number_to_emoji(str(index + 1))
+                + " '"
+                + entry[1]
+                + "' ("
+                + entry[0]
+                + ")"
+                + "\n➡️Default link: <b>"
+                + old_link
+                + "</b>"
+            )
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "🔗Change to " + new_link + "🔗",
+                        callback_data={
+                            "option": "change_database",
+                            "alias": entry[1],
+                            "url": entry[0],
+                        },
+                    )
+                ],
+            ]
+
+            await update.message.reply_text(
+                text=message,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+
+    async def help(self, update, context):
         """
         Send a message when the command /help is issued.
         """
 
         message = "If you need help with handling the commands, please have a look at my <a href='https://github.com/cbrgm/telegram-robot-rss'>Github</a> page. There I have summarized everything necessary for you!"
-        update.message.reply_text(message, parse_mode="HTML")
+        await update.message.reply_text(message, parse_mode="HTML")
 
-    def stop(self, update):
+    async def stop(self, update, context):
         """
         Stops the bot from working
         """
@@ -256,17 +583,26 @@ class RobotRss(object):
         self.db.update_user(telegram_id=telegram_user.id, is_active=0)
 
         message = "Oh.. Okay, I will not send you any more news updates! If you change your mind and you want to receive messages from me again use /start command again!"
-        update.message.reply_text(message)
+        await update.message.reply_text(message)
 
-    def about(self, bot, update):
+    async def about(self, update, context):
         """
         Shows about information
         """
+        total_user = self.db.get_total_user()
+        print(total_user)
 
-        message = "Thank you for using <b>RobotRSS</b>! \n\n If you like the bot, please recommend it to others! \n\nDo you have problems, ideas or suggestions about what the bot should be able to do? Then contact my developer <a href='http://cbrgm.de'>@cbrgm</a> or create an issue on <a href='https://github.com/cbrgm/telegram-robot-rss'>Github</a>. There you will also find my source code, if you are interested in how I work!"
-        update.message.reply_text(message, parse_mode="HTML")
+        message = (
+            ""
+            + ""
+            + ""
+            + ""
+            + "In this Moment there are:"
+            + str(total_user[0][0])
+        )
+        await update.message.reply_text(message, parse_mode="HTML")
 
 
 if __name__ == "__main__":
     # Load Credentials
-    RobotRss(telegram_token=TELEGRAM_TOKEN, update_interval=300)
+    RobotRss(telegram_token=TELEGRAM_TOKEN, update_interval=200)

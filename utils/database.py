@@ -3,6 +3,7 @@ import sqlite3
 from utils.filehandler import FileHandler
 from utils.datehandler import DateHandler as dh
 import os
+from utils.feedhandler import FeedHandler
 
 
 class DatabaseHandler(object):
@@ -13,7 +14,7 @@ class DatabaseHandler(object):
 
         if not self.filehandler.file_exists(self.database_path):
             sql_command = self.filehandler.load_file(
-                os.path.join("..", "database", "setup.sql")
+                os.path.join("database", "setup.sql")
             )
 
             conn = sqlite3.connect(self.database_path)
@@ -118,17 +119,20 @@ class DatabaseHandler(object):
 
         return result
 
-    def add_url(self, url):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "INSERT OR IGNORE INTO web (url, last_updated) VALUES (?,?)",
-            (url, dh.get_datetime_now()),
-        )
-
-        conn.commit()
-        conn.close()
+    def add_url(self, url, time=dh.get_datetime_now()):
+        article = FeedHandler.parse_first_entries(url)
+        if article != False:
+            last_title = article.title
+            conn = sqlite3.connect(self.database_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO web (url, last_title,last_updated) VALUES (?,?,?)",
+                (url, last_title, time),
+            )
+            conn.commit()
+            conn.close()
+        else:
+            print("errore nel trovare il feed")
 
     def remove_url(self, url):
         conn = sqlite3.connect(self.database_path)
@@ -151,7 +155,7 @@ class DatabaseHandler(object):
 
         sql_command = "UPDATE web SET "
         for key in kwargs:
-            sql_command = sql_command + str(key) + "='" + str(kwargs[key]) + "', "
+            sql_command = sql_command + str(key) + '="' + str(kwargs[key]) + '", '
         if len(kwargs) == 0:
             sql_command = sql_command + " WHERE url='" + str(url) + "';"
         else:
@@ -194,9 +198,13 @@ class DatabaseHandler(object):
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
 
-        self.add_url(url)  # add if not exists
+        # salvo con una data più vecchia :) perchè....
+        self.add_url(
+            url, dh.parse_datetime("01-05-1999")
+        )  # aggiungo l'url al database e ne salvo sia l'ultimo update che il titolo dell'ultimo articolo (sempre se esiste)
         cursor.execute(
-            "INSERT OR IGNORE INTO web_user VALUES (?,?,?)", (url, telegram_id, alias)
+            "INSERT OR IGNORE INTO web_user(url,telegram_id,alias,telegraph) VALUES (?,?,?,?)",
+            (url, telegram_id, alias, False),
         )
 
         conn.commit()
@@ -217,14 +225,20 @@ class DatabaseHandler(object):
         conn.commit()
         conn.close()
 
-    def update_user_bookmark(self, telegram_id, url, alias):
+    def update_user_bookmark(self, telegram_id, url, alias, telegraph=False):
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
+        if telegraph:
+            cursor.execute(
+                "UPDATE web_user SET alias=(?), telegraph=(?) WHERE telegram_id=(?) AND url=(?)",
+                (alias, telegraph, telegram_id, url),
+            )
+        else:
 
-        cursor.execute(
-            "UPDATE web_user SET alias=(?) WHERE telegram_id=(?) AND url=(?)",
-            (alias, telegram_id, url),
-        )
+            cursor.execute(
+                "UPDATE web_user SET alias=(?) WHERE telegram_id=(?) AND url=(?)",
+                (alias, telegram_id, url),
+            )
 
         conn.commit()
         conn.close()
@@ -234,7 +248,7 @@ class DatabaseHandler(object):
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT web.url, web_user.alias, web.last_updated FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
+            "SELECT web.url, web_user.alias, web.last_updated, web_user.telegraph FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
             + str(telegram_id)
             + " AND LOWER(web_user.alias) ='"
             + str(alias).lower()
@@ -251,18 +265,14 @@ class DatabaseHandler(object):
     def get_urls_for_user(self, telegram_id):
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
-
         cursor.execute(
-            "SELECT web.url, web_user.alias, web.last_updated FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
+            "SELECT web.url, web_user.alias, web.last_updated, web.last_title FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
             + str(telegram_id)
             + ";"
         )
-
         result = cursor.fetchall()
-
         conn.commit()
         conn.close()
-
         return result
 
     def get_users_for_url(self, url):
@@ -270,7 +280,7 @@ class DatabaseHandler(object):
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT user.*, web_user.alias FROM user, web_user WHERE web_user.telegram_id = user.telegram_id AND web_user.url ='"
+            "SELECT user.*, web_user.alias, web_user.telegraph FROM user, web_user WHERE web_user.telegram_id = user.telegram_id AND web_user.url ='"
             + str(url)
             + "';"
         )
@@ -279,6 +289,22 @@ class DatabaseHandler(object):
         conn.commit()
         conn.close()
 
+        return result
+
+    def get_total_user(self, active=False):
+        conn = sqlite3.connect(self.database_path)
+        cursor = conn.cursor()
+
+        if active:
+            cursor.execute(
+                "SELECT COUNT(user.username) FROM user WHERE user.is_active = 1 "
+            )
+        else:
+            cursor.execute("SELECT COUNT(user.username) FROM user ")
+
+        result = cursor.fetchall()
+        conn.commit()
+        conn.close()
         return result
 
     # def get_telegraph(self, )

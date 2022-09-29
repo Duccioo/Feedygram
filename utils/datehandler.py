@@ -27,3 +27,8 @@ class DateHandler:
             result = aware_date.astimezone(pytz.timezone("Europe/Berlin"))
 
         return result
+
+
+if __name__ == "__main__":
+    
+    print(DateHandler.parse_datetime("15-10-2022"))

@@ -1,7 +1,7 @@
 CREATE TABLE web (
 	url varchar PRIMARY KEY NOT NULL UNIQUE,
 	last_updated timestamp,
-	last_title_name varchar
+	last_title varchar
 );
 
 CREATE TABLE user (

@@ -1,23 +1,45 @@
 import feedparser
 import re
 import json
+import webpage2telegraph
 
 
 class FeedHandler(object):
     @staticmethod
-    def parse_feed(url, entries=0):
-        """
-        Parses the given url, returns a list containing all available entries
-        """
+    def parse_feed(url):
 
-        if 1 <= entries <= 10:
-            feed = feedparser.parse(url)
-
+        feed = feedparser.parse(url)
+        if "title" in feed.feed:
+            # ok feed trovato
             return feed
         else:
-            feed = feedparser.parse(url)
+            # url not parsed
+            return False
 
-            return feed
+    @staticmethod
+    def parse_N_entries(url, entries=0):
+        # return a list of entries
+        feed = FeedHandler.parse_feed(url)
+        if entries == 0:
+            # restituisco tutti gli articoli
+            if feed != False:
+                return feed.entries
+            else:
+                return False
+        else:
+            if feed != False:
+                return feed.entries[:entries]
+            else:
+                return False
+
+    @staticmethod
+    def parse_first_entries(url):
+        list = FeedHandler.parse_N_entries(url, 1)
+        if list != False:
+            # print(list)
+            return list[0]
+        else:
+            return False
 
     @staticmethod
     def is_parsable(url):
@@ -32,14 +54,34 @@ class FeedHandler(object):
         feed = feedparser.parse(url)
 
         # Check if result is empty
-        if not feed.entries:
-            print("ce qualcosa che non va")
-            return False
-        # Check if entries provide updated attribute
-        for post in feed.entries:
-            print(post)
+        try:
+            if feed.entries:
 
-        return True
+                # Check if entries provide updated attribute
+                for post in feed.entries:
+                    try:
+                        if post.updated:
+                            return True
+                    except:
+                        return "does not present date on the articles"
+
+        except:
+            # non ho trovato nessun'articolo
+            return "does not even have articles"
+
+        return "have a problem with this url"
+        # Da IMPLEMENTARE:
+        # provo lo stesso a vedere se almeno tra i meta-dati compare l'aggiornamento
+        # if feed.feed.updated:
+        #     return "special"
+
+    @staticmethod
+    def get_feed_title(url):
+        feed = feedparser.parse(url)
+        if feed.feed.title:
+            return feed.feed.title
+        else:
+            return False
 
     @staticmethod
     def format_url_string(string):
@@ -57,8 +99,28 @@ class FeedHandler(object):
         return string
 
 
-feeds = FeedHandler.parse_feed("https://multiplayer.it/feed/rss/homepage/")
-# feeds = FeedHandler.parse_feed("https://siliconarcadia.substack.com/feed")
-# feeds = FeedHandler.parse_feed("https://feeds.feedburner.com/hd-blog")
-for item in feeds.entries[:1]:
-    print(item.title)
+if __name__ == "__main__":
+
+    feeds = []
+
+    feeds.append(FeedHandler.parse_feed("https://multiplayer.it/feed/rss/recensioni/"))
+    feeds.append(FeedHandler.parse_feed("https://siliconarcadia.substack.com/feed"))
+    feeds.append(FeedHandler.parse_feed("https://multiplayer.it/feed/rss/news/"))
+    feeds.append(FeedHandler.parse_feed("https://multiplayer.it/feed/rss/articoli/"))
+    feeds.append(FeedHandler.parse_feed("https://feeds.feedburner.com/hd-blog"))
+
+    for item in feeds:
+        print(
+            "Testata:",
+            item.feed.title,
+            "----titolo",
+            item.entries[0].title,
+            " in data-->",
+            item.entries[0].updated,
+        )
+        print(
+            "telegraph",
+            webpage2telegraph.transfer(
+                "https://www.behance.net/gallery/150667351/Acid-Summer-Portraits"
+            ),
+        )

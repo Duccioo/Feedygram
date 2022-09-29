@@ -10,9 +10,9 @@ TELEGRAM_TOKEN = _your telegram token_
 Canale feed rss
 funzionalità:
 
-- [ ] Poter aggiungere per ogni utente una personale lista di feed
-- [ ] controllo dopo un tot di minuti se sono arrivati nuovi feed
-- [ ] visualizzare tutti i link con un'apertura rapida
+- [x] Poter aggiungere per ogni utente una personale lista di feed
+- [x] controllo dopo un tot di minuti se sono arrivati nuovi feed
+- [x] visualizzare tutti i link con un'apertura rapida
 - [ ] aggiungere un campo per poter settare dove inviare i messaggi
 
 Siti da:
