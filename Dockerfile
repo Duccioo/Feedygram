@@ -1,4 +1,4 @@
-FROM arm64v8/python:3.9.14-alpine3.16
+FROM arm64v8/python:3.10.14-alpine3.16
 
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -8,9 +8,9 @@ RUN apk update
 RUN apk upgrade
 
 
-RUN pip install --upgrade pip
+RUN python -m pip install --upgrade pip
 
-RUN pip install Pillow
+RUN python -m pip install Pillow
 
 RUN apk add libffi-dev gcc libc-dev 
 COPY requirements.txt .
