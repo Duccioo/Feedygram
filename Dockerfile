@@ -1,4 +1,4 @@
-FROM arm64v8/python:3.10.14-alpine3.16
+FROM arm64v8/python:3.10-alpine3.16
 
 ENV PYTHONDONTWRITEBYTECODE=1
 
