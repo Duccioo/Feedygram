@@ -1,7 +1,7 @@
 # /bin/bash/python
 # encoding: utf-8
 
-from email import message
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -10,17 +10,15 @@ from telegram.ext import (
 )
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from utils.filehandler import FileHandler
-from utils.database import DatabaseHandler
-from command.processing import BatchProcess
-from utils.feedhandler import FeedHandler
 import os
 from dotenv import load_dotenv
-
-
-import webpage2telegraph
 import random
+
+from utils.database import DatabaseHandler
+
+from utils.feedhandler import FeedHandler
 from utils.make_text import bip_bop, random_emoji, number_to_emoji
+from command.processing import BatchProcess
 from command.other_commands import (
     list_handler,
     stop_handler,
@@ -32,7 +30,6 @@ from command.important_command import remove_list_handler, get_list_handler
 
 
 load_dotenv()
-
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 UPDATE_INTERVAL = os.environ["UPDATE_INTERVAL"]
 
