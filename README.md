@@ -15,18 +15,18 @@ funzionalità:
 - [x] visualizzare tutti i link con un'apertura rapida
 - [ ] aggiungere un campo per poter settare dove inviare i messaggi
 
-prototipo docker-compose:
+## prototipo docker-compose
 
-```python
+```docker-compose
 
         version: "2.1"
         services:
-        feedergraph:
-            image: duccioo/feedergraph:raspberrypi
-            container_name: duccio-bot-portfolio
-            environment:
-            - TELEGRAM_TOKEN=*your telegram token* 
-            - UPDATE_INTERVAL=*refresh rate* 
+            feedergraph:
+                image: duccioo/feedergraph:raspberrypi
+                container_name: duccio-bot-portfolio
+                environment:
+                    - TELEGRAM_TOKEN=*your telegram token*
+                    - UPDATE_INTERVAL=*refresh rate*
 
-            restart: unless-stopped
+                restart: unless-stopped
 ```
