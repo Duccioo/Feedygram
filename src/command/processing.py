@@ -27,9 +27,11 @@ class BatchProcess:
         """
         url_queue = self.db.get_all_urls()
         for item in url_queue:
-            self.update_feed(item)
+           
+            await self.update_feed(item)
 
     async def update_feed(self, url):
+        
         print(url)
 
         telegram_users = self.db.get_users_for_url(url=url[0])
@@ -38,7 +40,7 @@ class BatchProcess:
             if user[6]:  # is_active
                 try:
                     feed = FeedHandler.parse_N_entries(url[0])
-                    for post in reversed(feed):
+                    for post in (feed):
 
                         post_update_date = DateHandler.parse_datetime(
                             datetime=post.updated
@@ -81,8 +83,6 @@ class BatchProcess:
             last_updated=str(DateHandler.get_datetime_now()),
             last_title=str((FeedHandler.parse_first_entries(url[0])).title),
         )
-
-    
 
     def set_running(self, running):
         self.running = running

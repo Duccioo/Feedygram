@@ -601,7 +601,8 @@ class Feedergraph(object):
         """
         Shows about information
         """
-        await update.message.reply_text(about_message(db=self.db), parse_mode="HTML")
+        message = about_message(number=self.db.get_total_user())
+        await update.message.reply_text(text=message, parse_mode="HTML")
 
 
 if __name__ == "__main__":

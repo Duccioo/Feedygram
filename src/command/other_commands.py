@@ -39,18 +39,17 @@ def list_handler(db_telegraph, alias, url, index):
     return message, InlineKeyboardMarkup(keyboard)
 
 
-async def help_message():
-    return "If you need help with handling the commands, please have a look at my <a href='https://github.com/cbrgm/telegram-robot-rss'>Github</a> page. There I have summarized everything necessary for you!"
+def help_message():
+    return "Da implementare"
 
 
-async def stop_handler(db, telegram_user):
+def stop_handler(db, telegram_user):
     db.update_user(telegram_id=telegram_user.id, is_active=0)
 
     return "Oh.. Okay, I will not send you any more news updates! If you change your mind and you want to receive messages from me again use /start command again!"
 
 
-async def about_message(db):
-    total_user = db.get_total_user()
-
-    message = "" + "" + "" + "" + "In this Moment there are:" + str(total_user[0][0])
+def about_message(number):
+    
+    message = "" + "" + "" + "" + "There are currently "+str(number_to_emoji((number[0][0])))+ " active users"
     return message
