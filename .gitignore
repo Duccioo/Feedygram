@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 docker-compose.yaml
+
 # C extensions
 *.so
 src/database/datastore.db

@@ -3,7 +3,7 @@
 Bot Per creare Feed Personalizzati di Telegram che restituisce articoli in telegraph
 
 ha bisogno di 1 sola variabile d'ambiente
-TELEGRAM_TOKEN = _your telegram token_
+TELEGRAM*TOKEN = \_your telegram token*
 
 ## cosedafare
 
@@ -15,12 +15,18 @@ funzionalità:
 - [x] visualizzare tutti i link con un'apertura rapida
 - [ ] aggiungere un campo per poter settare dove inviare i messaggi
 
-Siti da:
-\_ITA
--hd_Blog
--Silicon_arcadia
--Multiplayer.it
+prototipo docker-compose:
 
-\_ENG
--wired
--...
+```python
+
+        version: "2.1"
+        services:
+        feedergraph:
+            image: duccioo/feedergraph:raspberrypi
+            container_name: duccio-bot-portfolio
+            environment:
+            - TELEGRAM_TOKEN=*your telegram token* 
+            - UPDATE_INTERVAL=*refresh rate* 
+
+            restart: unless-stopped
+```
