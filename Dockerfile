@@ -16,6 +16,8 @@ RUN apk update \
 COPY requirements.txt .
 RUN python -m pip install -r requirements.txt
 
+
+VOLUME /app
 WORKDIR /app
 
 COPY . /app
