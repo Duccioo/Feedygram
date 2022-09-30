@@ -7,7 +7,12 @@ ENV PYTHONUNBUFFERED=1
 RUN apk update
 RUN apk upgrade
 
-RUN python -m pip install -U --force-reinstall pip
+
+RUN pip install --upgrade pip
+RUN apk add libjpeg8-dev zlib1g-dev
+RUN pip install Pillow
+
+
 RUN python -m pip install --upgrade pillow
 RUN apk add libffi-dev gcc libc-dev 
 
