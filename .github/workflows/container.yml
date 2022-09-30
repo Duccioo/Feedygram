@@ -1,0 +1,52 @@
+on: push
+
+jobs:
+  build-container:
+    name: Build container
+    runs-on: ubuntu-latest
+    env:      
+    
+     
+      DOCKER_IMAGE: duccioo/github-database-telegrambot
+      DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}  
+      DOCKER_TARGET_PLATFORM: linux/arm/v7    
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+        
+      - name: Set up Docker Buildx      
+        uses: crazy-max/ghaction-docker-buildx@v1      
+        with:        
+          version: latest    
+      
+      - name: Prepare      
+        if: success()      
+        id: prepare      
+        run: |        
+          echo ::set-output name=docker_platform::${DOCKER_TARGET_PLATFORM}        
+          echo ::set-output name=docker_image::${DOCKER_IMAGE}        
+          echo ::set-output name=version::raspberrypi    
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN}}
+      
+      - name: Run Buildx (push image)      
+        if: success()      
+        run: |        
+          docker buildx build --platform ${{ steps.prepare.outputs.docker_platform }} --tag duccioo/feedergraph:${{ steps.prepare.outputs.version }} --output type=image,push=true .
+      
+      
+
+             
+   
+
+
+   
+    
+    
+    

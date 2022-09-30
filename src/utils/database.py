@@ -306,5 +306,3 @@ class DatabaseHandler(object):
         conn.commit()
         conn.close()
         return result
-
-    # def get_telegraph(self, )

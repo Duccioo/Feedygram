@@ -11,7 +11,7 @@ from telegram.ext import (
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils.filehandler import FileHandler
 from utils.database import DatabaseHandler
-from utils.processing import BatchProcess
+from command.processing import BatchProcess
 from utils.feedhandler import FeedHandler
 import os
 from dotenv import load_dotenv
@@ -19,12 +19,20 @@ from dotenv import load_dotenv
 import webpage2telegraph
 import random
 from utils.make_text import bip_bop, random_emoji, number_to_emoji
+from command.other_commands import (
+    list_handler,
+    stop_handler,
+    help_message,
+    about_message,
+)
 
 
 load_dotenv()
 
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+
+UPDATE_INTERVAL = os.environ["UPDATE_INTERVAL"]
 
 
 def check_change_link(obj):
@@ -35,7 +43,7 @@ def check_change_link(obj):
         return False
 
 
-class RobotRss(object):
+class Feedergraph(object):
     def __init__(self, telegram_token, update_interval):
 
         # Initialize bot internals
@@ -127,91 +135,6 @@ class RobotRss(object):
     async def update_message(self, update, context):
         query = update.callback_query
 
-        await query.answer()
-
-        data = query.data
-
-        keyboard_telegraph = [
-            [
-                InlineKeyboardButton(
-                    "🤙Telegraph Link🤙",
-                    callback_data={
-                        "alias": data["alias"],
-                        "set_telegraph": True,
-                        "link": data["link"],
-                        "title": data["title"],
-                    },
-                ),
-            ],
-        ]
-
-        keyboard_normal = [
-            [
-                InlineKeyboardButton(
-                    "✳️Normal Link✳️",
-                    callback_data={
-                        "alias": data["alias"],
-                        "set_telegraph": False,
-                        "link": data["link"],
-                        "title": data["title"],
-                    },
-                )
-            ],
-        ]
-
-        set_telegraph = data["set_telegraph"]
-
-        if set_telegraph:
-            reply_markup = InlineKeyboardMarkup(keyboard_normal)
-            title_first = data["title"]
-            link_first = str(webpage2telegraph.transfer(data["link"]))
-            title_second = "Normal Link"
-            link_second = data["link"]
-        else:
-            reply_markup = InlineKeyboardMarkup(keyboard_telegraph)
-            title_first = data["title"]
-            link_first = data["link"]
-            title_second = "Telegraph Link"
-            link_second = str(webpage2telegraph.transfer(data["link"]))
-
-        list = [
-            "New Update! ",
-            "Something Change in ",
-            "Here's for you, from",
-            "Drin drin! ",
-            "News FROM ",
-        ]
-        message = (
-            "🔔"
-            + random.choice(list)
-            + "["
-            + data["alias"]
-            + "] \n------------------------\n <a href='"
-            + link_first
-            + "'>"
-            + title_first
-            + "</a>"
-            + "\n-------------------------\n<a href='"
-            + link_second
-            + "'>"
-            + "["
-            + title_second
-            + "]"
-            + "</a>"
-        )
-
-        try:
-            await query.edit_message_text(
-                text=message,
-                parse_mode="HTML",
-                reply_markup=reply_markup,
-            )
-
-        except:
-            print("dio porco")
-            # handle all other telegram related errors
-            pass
-
     async def change_link_type(self, update, context):
         query = update.callback_query
         telegram_user = query.from_user
@@ -223,7 +146,7 @@ class RobotRss(object):
             db_telegraph = self.db.get_user_bookmark(
                 telegram_user.id, alias=data["alias"]
             )
-            print(db_telegraph)
+
             if db_telegraph != None:
                 self.db.update_user_bookmark(
                     telegram_user.id,
@@ -517,7 +440,6 @@ class RobotRss(object):
         """
 
         telegram_user = update.message.from_user
-
         message = (
             bip_bop()
             + "🤖! Here is a list of all subscriptions <i>I stored for you</i>❤️!\nIf you want to change the default link click the button below!"
@@ -529,80 +451,35 @@ class RobotRss(object):
 
         for index, entry in enumerate(entries):
             db_telegraph = self.db.get_user_bookmark(telegram_user.id, alias=entry[1])
-            if db_telegraph[3]:
-                new_link = "Normal Link"
-                old_link = "Telegraph Link"
-            else:
-                new_link = "Telegraph Link"
-                old_link = "Normal Link"
-
-            message = (
-                number_to_emoji(str(index + 1))
-                + " '"
-                + entry[1]
-                + "' ("
-                + entry[0]
-                + ")"
-                + "\n➡️Default link: <b>"
-                + old_link
-                + "</b>"
+            list_message, list_keyboard = list_handler(
+                db_telegraph[3], alias=entry[1], url=entry[0], index=index
             )
-            keyboard = [
-                [
-                    InlineKeyboardButton(
-                        "🔗Change to " + new_link + "🔗",
-                        callback_data={
-                            "option": "change_database",
-                            "alias": entry[1],
-                            "url": entry[0],
-                        },
-                    )
-                ],
-            ]
-
             await update.message.reply_text(
-                text=message,
+                text=list_message,
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard),
+                reply_markup=list_keyboard,
             )
 
     async def help(self, update, context):
         """
         Send a message when the command /help is issued.
         """
-
-        message = "If you need help with handling the commands, please have a look at my <a href='https://github.com/cbrgm/telegram-robot-rss'>Github</a> page. There I have summarized everything necessary for you!"
-        await update.message.reply_text(message, parse_mode="HTML")
+        await update.message.reply_text(help_message(), parse_mode="HTML")
 
     async def stop(self, update, context):
         """
         Stops the bot from working
         """
-
-        telegram_user = update.message.from_user
-        self.db.update_user(telegram_id=telegram_user.id, is_active=0)
-
-        message = "Oh.. Okay, I will not send you any more news updates! If you change your mind and you want to receive messages from me again use /start command again!"
-        await update.message.reply_text(message)
+        await update.message.reply_text(
+            stop_handler(telegram_user=update.message.from_user, db=self.db)
+        )
 
     async def about(self, update, context):
         """
         Shows about information
         """
-        total_user = self.db.get_total_user()
-        print(total_user)
-
-        message = (
-            ""
-            + ""
-            + ""
-            + ""
-            + "In this Moment there are:"
-            + str(total_user[0][0])
-        )
-        await update.message.reply_text(message, parse_mode="HTML")
+        await update.message.reply_text(about_message(db=self.db), parse_mode="HTML")
 
 
 if __name__ == "__main__":
-    # Load Credentials
-    RobotRss(telegram_token=TELEGRAM_TOKEN, update_interval=200)
+    Feedergraph(telegram_token=TELEGRAM_TOKEN, update_interval=UPDATE_INTERVAL)
