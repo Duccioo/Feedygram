@@ -46,11 +46,6 @@ class FeedHandler(object):
         """
         Checks wether the given url provides a news feed. Return True if news are available, else False
         """
-
-        # url_pattern = re.compile("((http(s?))):\/\/.*")
-        # if not url_pattern.match(url):
-        #     return False
-
         feed = feedparser.parse(url)
 
         # Check if result is empty

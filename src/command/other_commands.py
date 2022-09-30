@@ -3,13 +3,14 @@ from utils.make_text import number_to_emoji
 
 
 def list_handler(db_telegraph, alias, url, index):
+    
 
-    if db_telegraph:
-        new_link = "Normal Link"
-        old_link = "Telegraph Link"
+    if db_telegraph == True:
+        new_link = "✳️Normal Link✳️k"
+        old_link = "🤙Telegraph Link🤙"
     else:
-        new_link = "Telegraph Link"
-        old_link = "Normal Link"
+        new_link = "🤙Telegraph Link🤙"
+        old_link = "✳️Normal Link✳️"
 
     message = (
         number_to_emoji(str(index + 1))
@@ -25,16 +26,17 @@ def list_handler(db_telegraph, alias, url, index):
     keyboard = [
         [
             InlineKeyboardButton(
-                "🔗Change to " + new_link + "🔗",
+                "🔗Change to " + new_link,
                 callback_data={
                     "option": "change_database",
                     "alias": alias,
                     "url": url,
+                    "set_telegraph": not db_telegraph,
                 },
             )
         ],
     ]
-    return InlineKeyboardMarkup(keyboard), message
+    return message, InlineKeyboardMarkup(keyboard)
 
 
 async def help_message():

@@ -1,6 +1,7 @@
 # /bin/bash/python
 # encoding: utf-8
 
+from email import message
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -16,6 +17,7 @@ from utils.feedhandler import FeedHandler
 import os
 from dotenv import load_dotenv
 
+
 import webpage2telegraph
 import random
 from utils.make_text import bip_bop, random_emoji, number_to_emoji
@@ -25,21 +27,64 @@ from command.other_commands import (
     help_message,
     about_message,
 )
+import command.feed_message as feed_message
+from command.important_command import remove_list_handler, get_list_handler
 
 
 load_dotenv()
 
-
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-
 UPDATE_INTERVAL = os.environ["UPDATE_INTERVAL"]
+
+
+def check_change_feed_link(obj):
+    try:
+        if obj["option"] == "change_feed_link":
+            return True
+        else:
+            return False
+    except:
+        return False
+
+
+def check_send_feed(obj):
+    try:
+        if obj["option"] == "send_feed":
+            return True
+        else:
+            return False
+    except:
+        return False
+
+
+def check_how_many_feed(obj):
+    try:
+        if obj["option"] == "select_how_many_feed":
+            return True
+        else:
+            return False
+    except:
+        return False
 
 
 def check_change_link(obj):
     try:
         if obj["option"] == "change_database":
             return True
+        else:
+            return False
     except:
+        return False
+
+
+def check_remove_feed(obj):
+    try:
+        if obj["option"] == "delete_feed":
+            return True
+        else:
+            return False
+    except:
+
         return False
 
 
@@ -47,8 +92,7 @@ class Feedergraph(object):
     def __init__(self, telegram_token, update_interval):
 
         # Initialize bot internals
-        self.db = DatabaseHandler("database/datastore.db")
-        self.fh = FileHandler("database/setub.sql")
+        self.db = DatabaseHandler("database", "datastore.db")
 
         self.bot = (
             Application.builder()
@@ -70,26 +114,36 @@ class Feedergraph(object):
         self._addCommand(CommandHandler("remove", self.remove))
 
         self.bot.add_handler(
-            CallbackQueryHandler(self.change_link_type, pattern=check_change_link)
+            CallbackQueryHandler(self.change_list_type, pattern=check_change_link)
         )
 
-        self.bot.add_handler(CallbackQueryHandler(self.update_message))
+        self.bot.add_handler(
+            CallbackQueryHandler(self.remove, pattern=check_remove_feed)
+        )
+
+        self.bot.add_handler(
+            CallbackQueryHandler(self.get, pattern=check_how_many_feed)
+        )
+        self.bot.add_handler(
+            CallbackQueryHandler(self.get_n_feed, pattern=check_send_feed)
+        )
+
+        self.bot.add_handler(
+            CallbackQueryHandler(self.update_message, pattern=check_change_feed_link)
+        )
 
         # Start the Bot
         self.processing = BatchProcess(
             database=self.db, update_interval=update_interval, bot=self.bot
         )
 
-        self.job_queue.run_repeating(self.processing.run, update_interval, first=1)
-
+        self.job_queue.run_repeating(self.processing.run, int(update_interval), first=1)
         self.bot.run_polling()
 
     def _addCommand(self, command):
-
         """
         Registers a new command to the bot
         """
-
         self.bot.add_handler(command)
 
     async def start(self, update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,62 +189,79 @@ class Feedergraph(object):
     async def update_message(self, update, context):
         query = update.callback_query
 
-    async def change_link_type(self, update, context):
+        if query != None:
+            await query.answer()
+            data = query.data
+
+            message, keyboard = feed_message.send_feed(
+                telegraph=data["set_telegraph"],
+                alias=data["alias"],
+                post_link=data["link"],
+                post_title=data["title"],
+            )
+            await query.edit_message_text(
+                text=message,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+
+    async def change_list_type(self, update, context):
         query = update.callback_query
         telegram_user = query.from_user
         if query != None:
             await query.answer()
             data = query.data
 
-            # mi vado a prendere nel database se i link sono in versione telegraph
-            db_telegraph = self.db.get_user_bookmark(
-                telegram_user.id, alias=data["alias"]
+            # data è così composto:
+            # "alias"
+            # "set_telegraph"
+            # "url'
+
+            if data["set_telegraph"] == True:
+                new_link = "✳️Normal Link✳️"
+                old_link = "🤙Telegraph Link🤙"
+            else:
+                new_link = "🤙Telegraph Link🤙"
+                old_link = "✳️Normal Link✳️"
+
+            self.db.update_user_bookmark(
+                telegram_user.id,
+                url=data["url"],
+                alias=data["alias"],
+                telegraph=data["set_telegraph"],
             )
 
-            if db_telegraph != None:
-                self.db.update_user_bookmark(
-                    telegram_user.id,
-                    url=data["url"],
-                    alias=data["alias"],
-                    telegraph=not db_telegraph[3],
-                )
+            list = ["wonderful\n", "Marvelous\n", "Amazing\n"]
+            message = (
+                random.choice(list)
+                + "I change '"
+                + data["alias"]
+                + "' to send by default \n<b>"
+                + old_link
+                + "</b>!!\nIf you want to receive <b>"
+                + new_link
+                + "</b>instead click the button below!"
+            )
 
-                if db_telegraph[3]:
-                    new_link = "Normal Link"
-                    old_link = "Telegraph Link"
-                else:
-                    new_link = "Telegraph Link"
-                    old_link = "Normal Link"
-                list = ["wonderful", "Marvelous"]
-                message = (
-                    random.choice(list)
-                    + "I change '"
-                    + data["alias"]
-                    + "' to send by default <b>"
-                    + new_link
-                    + "</b>!!\nIf you want to receive <b>"
-                    + old_link
-                    + "</b> click the button below!"
-                )
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "🔙Change to " + new_link + "🔙",
+                        callback_data={
+                            "option": "change_database",
+                            "alias": data["alias"],
+                            "url": data["url"],
+                            "set_telegraph": not data["set_telegraph"],
+                        },
+                    )
+                ],
+            ]
 
-                keyboard = [
-                    [
-                        InlineKeyboardButton(
-                            "🔙Change to " + old_link + "🔙",
-                            callback_data={
-                                "option": "change_database",
-                                "alias": data["alias"],
-                                "url": data["url"],
-                            },
-                        )
-                    ],
-                ]
-
-                await query.edit_message_text(
-                    text=message,
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                )
+            await query.edit_message_text(
+                text=message,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
 
     async def add(self, update, context):
         # Adds a rss subscription to user
@@ -224,7 +295,7 @@ class Feedergraph(object):
             return
 
         arg_url = FeedHandler.format_url_string(string=args[1])
-        print(arg_url)
+
         # Check if argument matches url format
         is_parsable = FeedHandler.is_parsable(url=arg_url)
         if is_parsable != True:
@@ -325,6 +396,7 @@ class Feedergraph(object):
                         "option": "change_database",
                         "alias": arg_entry,
                         "url": arg_url.lower(),
+                        "set_telegraph": False,
                     },
                 )
             ],
@@ -343,96 +415,149 @@ class Feedergraph(object):
             text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
+    async def get_n_feed(self, update, context):
+
+        # invio tanti messaggi quanti specificati in 'data'
+        query = update.callback_query
+
+        if query != None:
+            await query.answer()
+            telegram_user = query.from_user
+            data = query.data
+            # data è composto da:  "alias", "url", "user", "number_feed"
+            entries = FeedHandler.parse_N_entries(data["url"], data["number_feed"])
+            for entry in reversed(entries):
+                # print(entry)
+                # controllo in che modalità vuole il link:
+
+                db_telegraph = self.db.get_user_bookmark(
+                    data["user"], alias=data["alias"]
+                )
+
+                message, keyboard = feed_message.send_feed(
+                    telegraph=db_telegraph[3],
+                    alias=data["alias"],
+                    post_link=entry.link,
+                    post_title=entry.title,
+                )
+
+                await self.bot.bot.send_message(
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                    chat_id=data["user"],
+                )
+
     async def get(self, update, context):
         """
         Manually parses an rss feed
         """
 
-        telegram_user = update.message.from_user
-        args = update.message.text.split()
+        query = update.callback_query
 
-        if len(args) > 3 or len(args) <= 1:
-            message = "To get the last news of your subscription please use /get <entryname> [optional: <count 1-10>]. Make sure you first add a feed using the /add command."
-            await update.message.reply_text(message)
-            return
+        if query != None:
+            await query.answer()
+            telegram_user = query.from_user
+            data = query.data
+            # data è composto da: alias, url, user
+            message = (
+                bip_bop()
+                + " perfect👌\nSelect how many FEEDs you want receive for: \n\n"
+                + data["alias"]
+                + "\n"
+            )
+            keyboard_number_feed = [
+                [
+                    InlineKeyboardButton(
+                        "1",
+                        callback_data={
+                            "option": "send_feed",
+                            "alias": data["alias"],
+                            "url": data["url"],
+                            "user": data["user"],
+                            "number_feed": 1,
+                        },
+                    ),
+                    InlineKeyboardButton(
+                        "5",
+                        callback_data={
+                            "option": "send_feed",
+                            "alias": data["alias"],
+                            "url": data["url"],
+                            "user": data["user"],
+                            "number_feed": 5,
+                        },
+                    ),
+                    InlineKeyboardButton(
+                        "ALL",
+                        callback_data={
+                            "option": "send_feed",
+                            "alias": data["alias"],
+                            "url": data["url"],
+                            "user": data["user"],
+                            "number_feed": 0,
+                        },
+                    ),
+                ],
+            ]
 
-        if len(args) == 3:
-            args_entry = args[1].lower()
-            args_count = int(args[2])
+            await query.edit_message_text(
+                text=message,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard_number_feed),
+            )
+
         else:
-            args_entry = args[1]
-            args_count = 1
+            telegram_user = update.message.from_user
 
-        url = self.db.get_user_bookmark(telegram_id=telegram_user.id, alias=args_entry)
+            entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
 
-        if url is None:
-            message = (
-                "I can not find an entry with label "
-                + args_entry
-                + " in your subscriptions! Please check your subscriptions using /list and use the delete command again!"
-            )
-            await update.message.reply_text(message)
-            return
-
-        entries = FeedHandler.parse_feed(url[0], args_count)
-        for entry in entries.entries[:args_count]:
-            message = (
-                "["
-                + url[1]
-                + "] <a href='"
-                + entry.link
-                + "'>"
-                + entry.title
-                + str(entries.feed.updated)
-                + "</a>"
+            remove_list_message, remove_list_keyboard = get_list_handler(
+                feed_list=entries, telegram_user=telegram_user
             )
 
-            try:
-                await update.message.reply_text(message, parse_mode="HTML")
-
-            except:
-                print("errore")
-                # handle all other telegram related errors
-                pass
+            await update.message.reply_text(
+                text=remove_list_message,
+                parse_mode="HTML",
+                reply_markup=remove_list_keyboard,
+            )
 
     async def remove(self, update, context):
         """
-        Removes an rss subscription from user
+        Displays a list of all user subscriptions
         """
 
-        args = context.args
+        query = update.callback_query
 
-        telegram_user = update.message.from_user
+        if query != None:
+            await query.answer()
+            telegram_user = query.from_user
+            data = query.data
+            # data è composto da: alias, url, user
+            self.db.remove_user_bookmark(telegram_id=telegram_user.id, url=data["url"])
 
-        if len(args) < 1:
-            message = "To remove a subscriptions from your list please use /remove <entryname>. To see all your subscriptions along with their entry names use /list !"
-            await update.message.reply_text(message)
-            return
+        else:
+            telegram_user = update.message.from_user
 
-        entry_args = (" ").join(args[0:])
-        print(entry_args)
+        entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
 
-        entry = self.db.get_user_bookmark(
-            telegram_id=telegram_user.id, alias=entry_args
+        remove_list_message, remove_list_keyboard = remove_list_handler(
+            feed_list=entries, telegram_user=telegram_user
         )
 
-        if entry:
-            self.db.remove_user_bookmark(telegram_id=telegram_user.id, url=entry[0])
-            message = (
-                "Mhh..."
-                + bip_bop()
-                + "OK, I removed "
-                + entry_args
-                + " from your subscriptions!"
+        if query != None:
+            await query.edit_message_text(
+                text=remove_list_message,
+                parse_mode="HTML",
+                reply_markup=remove_list_keyboard,
             )
-            await update.message.reply_text(message)
+
         else:
-            message = (
-                "I can not find an entry with label "
-                + args[0]
-                + " in your subscriptions! Please check your subscriptions using /list and use the delete command again!"
+            await update.message.reply_text(
+                text=remove_list_message,
+                parse_mode="HTML",
+                reply_markup=remove_list_keyboard,
             )
-            await update.message.reply_text(message)
 
     async def list(self, update, context):
         """
@@ -454,6 +579,7 @@ class Feedergraph(object):
             list_message, list_keyboard = list_handler(
                 db_telegraph[3], alias=entry[1], url=entry[0], index=index
             )
+
             await update.message.reply_text(
                 text=list_message,
                 parse_mode="HTML",

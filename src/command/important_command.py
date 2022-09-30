@@ -1,158 +1,247 @@
-
+from html import entities
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from utils.make_text import number_to_emoji, bip_bop, random_emoji
 
 
 async def add(self, update, context):
-        # Adds a rss subscription to user
+    # Adds a rss subscription to user
 
-        telegram_user = update.message.from_user
-        args = update.message.text.split()
-        list = [
-            "🍕Best site for cooking Pizza🍕",
-            "🍷Best Site for sciacquare una bottiglia di Brunello",
-            "🐶BauBau",
-            "😏HotSite.com",
-            "💩.it",
-            "😴generic_news_boooring_site🥱",
-            "🎮Games&Caipiroska🍹",
-        ]
-        if len(args) < 2:
-            message = (
-                "Oh nono! I could not add the entry😯!\n"
-                + bip_bop()
-                + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
-                + "Try to send a valid URL like this:"
-                + "\n\n"
-                + "<code>/add https://duccio.me/ "
-                + random.choice(list)
-                + "</code>"
-            )
-            await update.message.reply_text(
-                message,
-                parse_mode="HTML",
-            )
-            return
-
-        arg_url = FeedHandler.format_url_string(string=args[1])
-        print(arg_url)
-        # Check if argument matches url format
-        is_parsable = FeedHandler.is_parsable(url=arg_url)
-        if is_parsable != True:
-            message = (
-                bip_bop()
-                + "Sorry! It seems like <code>"
-                + str(arg_url)
-                + "</code> "
-                + str(is_parsable)
-                + "...😣.\n Have you tried other URLs?\n"
-                + "Try to send a valid URL like this:\n"
-                + "<code>/add https://duccio.me/ "
-                + random.choice(list)
-                + "</code>"
-            )
-            await update.message.reply_text(
-                message,
-                parse_mode="HTML",
-            )
-            return
-
-        # Check if entry does not exists
-        entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
-
-        if any(arg_url.lower() in entry for entry in entries):
-            message = (
-                "Sorry, "
-                + telegram_user.first_name
-                + "!I already have that url with stored in your subscriptions😒"
-                + "\nAdd a new one like this:\n"
-                + "<code>/add https://duccio.me/ "
-                + random.choice(list)
-                + "</code>"
-            )
-            await update.message.reply_text(
-                message,
-                parse_mode="HTML",
-            )
-            return
-
-        if len(args) == 2:
-            arg_entry = (
-                random_emoji()
-                + " "
-                + FeedHandler.get_feed_title(arg_url)
-                + " "
-                + random_emoji()
-            )
-            if arg_entry == False:
-                message = (
-                    bip_bop()
-                    + "mhh... I tried my best for create a title for that url but I can't...\n"
-                    + telegram_user.username
-                    + "try to resend <code> /add "
-                    + args[1]
-                    + "</code> and this time add a costum name!"
-                    + bip_bop()
-                    + "\nLike this: "
-                    + "<code>/add https://duccio.me/ "
-                    + random.choice(list)
-                    + "</code>"
-                )
-                await update.message.reply_text(
-                    message,
-                    parse_mode="HTML",
-                )
-
-        elif len(args) >= 3:
-            arg_entry = ""
-            for i in range(3, len(args)):
-                arg_entry = arg_entry + " " + args[i]
-        list1 = ["I'm stressed...😣", "I'm bored... 🥱", "I'm in love...🥰"]
-        if any(arg_entry in entry for entry in entries):
-            message = (
-                "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAMEEE!!"
-                + bip_bop()
-                + "</b>\n\n...\n\nSorry 😥, "
-                + random.choice(list1)
-                + "\nTry to send my another feed like this:\n"
-                + "<code>/add https://duccio.me/ "
-                + random.choice(list)
-                + "</code>"
-            )
-            await update.message.reply_text(
-                message,
-                parse_mode="HTML",
-            )
-            return
-
-        self.db.add_user_bookmark(
-            telegram_id=telegram_user.id, url=arg_url.lower(), alias=arg_entry
-        )
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🔗Change to Telegraph Link🔗",
-                    callback_data={
-                        "option": "change_database",
-                        "alias": arg_entry,
-                        "url": arg_url.lower(),
-                    },
-                )
-            ],
-        ]
+    telegram_user = update.message.from_user
+    args = update.message.text.split()
+    list = [
+        "🍕Best site for cooking Pizza🍕",
+        "🍷Best Site for sciacquare una bottiglia di Brunello",
+        "🐶BauBau",
+        "😏HotSite.com",
+        "💩.it",
+        "😴generic_news_boooring_site🥱",
+        "🎮Games&Caipiroska🍹",
+    ]
+    if len(args) < 2:
         message = (
-            "WOOW!!🤝"
+            "Oh nono! I could not add the entry😯!\n"
             + bip_bop()
-            + "\nI successfully added "
-            + arg_entry
-            + " to your subscriptions!"
-            + bip_bop()
-            + "\n👀Look! By default when I found a new post I try to send <b>Normal Link</b>.\n"
-            + "If you want to always receive <b>Telegraph Link</b> (to open with <u>Instant View</u>) click the button below"
+            + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
+            + "Try to send a valid URL like this:"
+            + "\n\n"
+            + "<code>/add https://duccio.me/ "
+            + random.choice(list)
+            + "</code>"
         )
         await update.message.reply_text(
-            text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
+            message,
+            parse_mode="HTML",
         )
+        return
 
-async def get(self, update, context):
+    arg_url = FeedHandler.format_url_string(string=args[1])
+    print(arg_url)
+    # Check if argument matches url format
+    is_parsable = FeedHandler.is_parsable(url=arg_url)
+    if is_parsable != True:
+        message = (
+            bip_bop()
+            + "Sorry! It seems like <code>"
+            + str(arg_url)
+            + "</code> "
+            + str(is_parsable)
+            + "...😣.\n Have you tried other URLs?\n"
+            + "Try to send a valid URL like this:\n"
+            + "<code>/add https://duccio.me/ "
+            + random.choice(list)
+            + "</code>"
+        )
+        await update.message.reply_text(
+            message,
+            parse_mode="HTML",
+        )
+        return
+
+    # Check if entry does not exists
+    entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
+
+    if any(arg_url.lower() in entry for entry in entries):
+        message = (
+            "Sorry, "
+            + telegram_user.first_name
+            + "!I already have that url with stored in your subscriptions😒"
+            + "\nAdd a new one like this:\n"
+            + "<code>/add https://duccio.me/ "
+            + random.choice(list)
+            + "</code>"
+        )
+        await update.message.reply_text(
+            message,
+            parse_mode="HTML",
+        )
+        return
+
+    if len(args) == 2:
+        arg_entry = (
+            random_emoji()
+            + " "
+            + FeedHandler.get_feed_title(arg_url)
+            + " "
+            + random_emoji()
+        )
+        if arg_entry == False:
+            message = (
+                bip_bop()
+                + "mhh... I tried my best for create a title for that url but I can't...\n"
+                + telegram_user.username
+                + "try to resend <code> /add "
+                + args[1]
+                + "</code> and this time add a costum name!"
+                + bip_bop()
+                + "\nLike this: "
+                + "<code>/add https://duccio.me/ "
+                + random.choice(list)
+                + "</code>"
+            )
+            await update.message.reply_text(
+                message,
+                parse_mode="HTML",
+            )
+
+    elif len(args) >= 3:
+        arg_entry = ""
+        for i in range(3, len(args)):
+            arg_entry = arg_entry + " " + args[i]
+    list1 = ["I'm stressed...😣", "I'm bored... 🥱", "I'm in love...🥰"]
+    if any(arg_entry in entry for entry in entries):
+        message = (
+            "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAMEEE!!"
+            + bip_bop()
+            + "</b>\n\n...\n\nSorry 😥, "
+            + random.choice(list1)
+            + "\nTry to send my another feed like this:\n"
+            + "<code>/add https://duccio.me/ "
+            + random.choice(list)
+            + "</code>"
+        )
+        await update.message.reply_text(
+            message,
+            parse_mode="HTML",
+        )
+        return
+
+    self.db.add_user_bookmark(
+        telegram_id=telegram_user.id, url=arg_url.lower(), alias=arg_entry
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🔗Change to Telegraph Link🔗",
+                callback_data={
+                    "option": "change_database",
+                    "alias": arg_entry,
+                    "url": arg_url.lower(),
+                },
+            )
+        ],
+    ]
+    message = (
+        "WOOW!!🤝"
+        + bip_bop()
+        + "\nI successfully added "
+        + arg_entry
+        + " to your subscriptions!"
+        + bip_bop()
+        + "\n👀Look! By default when I found a new post I try to send <b>Normal Link</b>.\n"
+        + "If you want to always receive <b>Telegraph Link</b> (to open with <u>Instant View</u>) click the button below"
+    )
+    await update.message.reply_text(
+        text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+   
+
+def get_list_handler(feed_list, telegram_user):
+    """
+    create the message and the keyboard when user call /remove
+    """
+
+    keyboard = []
+    message = (
+        "Ok🫡 ,"
+        + telegram_user.name
+        + ", if you want to <b>GET</b> some Feed <b>NOW</b> tap on the buttom below⬇️"
+    )
+
+    if len(feed_list) == 0:
+        message = (
+            "Well, it looks like you don't have any feeds saved🫢"
+            + bip_bop()
+            + ".\nIf you don't know what to do, type <b>/help</b>!!"
+        )
+        keyboard_Markup = InlineKeyboardMarkup([[]])
+
+    else:
+        for entities in feed_list:
+
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        entities[1],
+                        callback_data={
+                            "option": "select_how_many_feed",
+                            "alias": entities[1],
+                            "url": entities[0],
+                            "user": telegram_user.id,
+                        },
+                    )
+                ]
+            )
+        keyboard_Markup = InlineKeyboardMarkup(keyboard)
+
+    return message, keyboard_Markup
+
+
+def remove_list_handler(feed_list, telegram_user):
+    """
+    create the message and the keyboard when user call /remove
+    """
+
+    keyboard = []
+    message = (
+        "Ok🫡 ,"
+        + telegram_user.name
+        + ", if you want <b>REMOVE</b> some feed tap on the buttom below⬇️"
+    )
+
+    if len(feed_list) == 0:
+        message = (
+            "Well, it looks like you don't have any feeds saved🫢"
+            + bip_bop()
+            + ".\nIf you don't know what to do, type <b>/help</b>!!"
+        )
+        keyboard_Markup = InlineKeyboardMarkup([[]])
+
+    else:
+        for entities in feed_list:
+
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "❌" + entities[1] + "❌",
+                        callback_data={
+                            "option": "delete_feed",
+                            "alias": entities[1],
+                            "url": entities[0],
+                            "user": telegram_user.id,
+                        },
+                    )
+                ]
+            )
+        keyboard_Markup = InlineKeyboardMarkup(keyboard)
+
+    return message, keyboard_Markup
+
+
+# OLD FUNCTION
+
+
+async def get_OLD(self, update, context):
     """
     Manually parses an rss feed
     """
@@ -204,7 +293,8 @@ async def get(self, update, context):
             # handle all other telegram related errors
             pass
 
-async def remove(self, update, context):
+
+async def remove_OLD(self, update, context):
     """
     Removes an rss subscription from user
     """
@@ -221,9 +311,7 @@ async def remove(self, update, context):
     entry_args = (" ").join(args[0:])
     print(entry_args)
 
-    entry = self.db.get_user_bookmark(
-        telegram_id=telegram_user.id, alias=entry_args
-    )
+    entry = self.db.get_user_bookmark(telegram_id=telegram_user.id, alias=entry_args)
 
     if entry:
         self.db.remove_user_bookmark(telegram_id=telegram_user.id, url=entry[0])

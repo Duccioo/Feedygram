@@ -1,3 +1,5 @@
+from ast import alias
+import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 import webpage2telegraph
 import random
@@ -77,6 +79,7 @@ def make_feed_keyboard(name="", alias="", set_telegraph=False, link="", title=""
             InlineKeyboardButton(
                 name,
                 callback_data={
+                    "option": "change_feed_link",
                     "alias": alias,
                     "set_telegraph": set_telegraph,
                     "link": link,
@@ -179,3 +182,57 @@ async def update_message(
         print("dio porco")
         # handle all other telegram related errors
         pass
+
+
+def send_feed(telegraph, alias, post_link, post_title):
+    # telegraph mi dice se il link che sto inviando è in versione telegraph o no
+    if telegraph:
+        reply_markup = make_feed_keyboard(
+            "✳️Normal Link✳️", alias, False, post_link, post_title
+        )
+        title_first = post_title
+        title_type = "🤙Telegram Link🤙\n "
+        link_first = webpage2telegraph.transfer(post_link)
+        # title_second = "Normal Link"
+        # link_second = post_link
+    else:
+        reply_markup = make_feed_keyboard(
+            "🤙Telegraph Link🤙", alias, True, post_link, post_title
+        )
+
+        title_type = "✳️Normal Link✳️\n "
+        title_first = post_title
+        link_first = post_link
+        # title_second = "Telegraph Link"
+        # link_second = str(webpage2telegraph.transfer(post_link))
+
+    list = [
+        "New Update! ",
+        "Something Change in ",
+        "Here's for you, from",
+        "Drin drin! ",
+        "News FROM ",
+    ]
+    message = (
+        "🔔"
+        + random.choice(list)
+        + "["
+        + alias
+        + "] \n--------------------------------------------------\n"
+        + title_type
+        + " <a href='"
+        + link_first
+        + "'>"
+        + title_first
+        + "</a>"
+        + "\n--------------------------------------------------\n"
+        # +"<a href='"
+        # + link_second
+        # + "'>"
+        # + "["
+        # + title_second
+        # + "]"
+        # + "</a>"
+    )
+
+    return message, reply_markup

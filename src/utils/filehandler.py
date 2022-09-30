@@ -3,16 +3,24 @@ import json
 
 
 class FileHandler(object):
-
     def __init__(self, relative_root_path=None):
 
         if relative_root_path is not None:
             self.base_path = os.path.abspath(
-                os.path.join(os.path.dirname(__file__),relative_root_path) )
-                
+                os.path.join(os.path.dirname(__file__), relative_root_path)
+            )
+            print("relative Path", self.base_path)
+
         else:
             print(os.path.dirname(__file__))
             self.base_path = os.path.abspath(os.path.dirname(__file__))
+
+    def join_path(self, *path):
+        final_path = self.base_path
+        for p in path:
+            final_path = os.path.join(final_path, p)
+
+        return final_path
 
     def load_json(self, path):
         """Loads a json file and returns the content as a dictionary"""
@@ -26,7 +34,7 @@ class FileHandler(object):
         """Stores string json data to a json file at given path"""
         filepath = os.path.join(self.base_path, path)
 
-        with open(filepath, 'w+') as outfile:
+        with open(filepath, "w+") as outfile:
             json.dump(data, outfile)
 
     def load_file(self, path):
@@ -49,7 +57,7 @@ class FileHandler(object):
         """Stores object values to a json file at given path"""
         filepath = os.path.join(self.base_path, path)
 
-        with open(filepath, 'w+') as outfile:
+        with open(filepath, "w+") as outfile:
             json.dump(object.__dict__, outfile)
 
     def file_exists(self, path):

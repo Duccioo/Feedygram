@@ -7,10 +7,11 @@ from utils.feedhandler import FeedHandler
 
 
 class DatabaseHandler(object):
-    def __init__(self, database_path):
+    def __init__(self, *database_path):
 
-        self.database_path = database_path
         self.filehandler = FileHandler(relative_root_path="..")
+        self.database_path = self.filehandler.join_path(*database_path)
+        print(self.database_path)
 
         if not self.filehandler.file_exists(self.database_path):
             sql_command = self.filehandler.load_file(
@@ -228,13 +229,14 @@ class DatabaseHandler(object):
     def update_user_bookmark(self, telegram_id, url, alias, telegraph=False):
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
-        if telegraph:
+        if telegraph != None:
+            print("camioo")
             cursor.execute(
                 "UPDATE web_user SET alias=(?), telegraph=(?) WHERE telegram_id=(?) AND url=(?)",
                 (alias, telegraph, telegram_id, url),
             )
         else:
-
+            print("nualla")
             cursor.execute(
                 "UPDATE web_user SET alias=(?) WHERE telegram_id=(?) AND url=(?)",
                 (alias, telegram_id, url),

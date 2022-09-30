@@ -5,7 +5,7 @@ __pycache__/
 docker-compose.yaml
 # C extensions
 *.so
-database/datastore.db
+src/database/datastore.db
 # Distribution / packaging
 .Python
 build/
