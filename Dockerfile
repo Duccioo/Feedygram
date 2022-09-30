@@ -9,7 +9,7 @@ RUN apk upgrade
 
 
 RUN pip install --upgrade pip
-RUN apk add libjpeg-dev zlib1g-dev
+
 RUN pip install Pillow
 
 RUN apk add libffi-dev gcc libc-dev 
