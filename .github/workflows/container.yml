@@ -7,7 +7,7 @@ jobs:
     env:      
     
      
-      DOCKER_IMAGE: duccioo/github-database-telegrambot
+      DOCKER_IMAGE: duccioo/feedergraph
       DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}  
       DOCKER_TARGET_PLATFORM: linux/arm/v7    
