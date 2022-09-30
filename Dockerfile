@@ -6,8 +6,10 @@ ENV PYTHONUNBUFFERED=1
 
 RUN apk update
 RUN apk upgrade
-RUN apk add git
-RUN apk add libffi-dev gcc libc-dev
+
+RUN python -m pip install -U --force-reinstall pip
+RUN python -m pip install --upgrade pillow
+RUN apk add libffi-dev gcc libc-dev 
 
 
 COPY requirements.txt .
