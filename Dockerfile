@@ -9,14 +9,10 @@ RUN apk upgrade
 
 
 RUN pip install --upgrade pip
-RUN apk add libjpeg8-dev zlib1g-dev
+RUN apk add libjpeg-dev zlib1g-dev
 RUN pip install Pillow
 
-
-RUN python -m pip install --upgrade pillow
 RUN apk add libffi-dev gcc libc-dev 
-
-
 COPY requirements.txt .
 RUN python -m pip install -r requirements.txt
 

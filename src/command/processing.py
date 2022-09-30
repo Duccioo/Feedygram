@@ -27,7 +27,7 @@ class BatchProcess:
         """
         url_queue = self.db.get_all_urls()
         for item in url_queue:
-            await asyncio.create_task( self.update_feed(item))
+            self.update_feed(item)
 
     async def update_feed(self, url):
         print(url)
