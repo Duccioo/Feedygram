@@ -338,8 +338,6 @@ class Feedergraph(object):
                 random_emoji()
                 + " "
                 + FeedHandler.get_feed_title(arg_url)
-                + " "
-                + random_emoji()
             )
             if arg_entry == False:
                 message = (
