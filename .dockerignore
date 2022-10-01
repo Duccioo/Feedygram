@@ -2,3 +2,4 @@
 docker-compose.yaml
 /src/database/datastore.db
 .env
+src/database/data/datastore.db

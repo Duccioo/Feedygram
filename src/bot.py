@@ -89,7 +89,7 @@ class Feedergraph(object):
     def __init__(self, telegram_token, update_interval):
 
         # Initialize bot internals
-        self.db = DatabaseHandler("database", "datastore.db")
+        self.db = DatabaseHandler("database","data", "datastore.db")
 
         self.bot = (
             Application.builder()
