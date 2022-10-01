@@ -89,7 +89,7 @@ class Feedergraph(object):
     def __init__(self, telegram_token, update_interval):
 
         # Initialize bot internals
-        self.db = DatabaseHandler("database","data", "datastore.db")
+        self.db = DatabaseHandler("database", "data", "datastore.db")
 
         self.bot = (
             Application.builder()
@@ -334,11 +334,7 @@ class Feedergraph(object):
             return
 
         if len(args) == 2:
-            arg_entry = (
-                random_emoji()
-                + " "
-                + FeedHandler.get_feed_title(arg_url)
-            )
+            arg_entry = random_emoji() + " " + FeedHandler.get_feed_title(arg_url)
             if arg_entry == False:
                 message = (
                     bip_bop()
@@ -399,9 +395,9 @@ class Feedergraph(object):
         message = (
             "WOOW!!🤝"
             + bip_bop()
-            + "\nI successfully added "
+            + "\nI successfully added ("
             + arg_entry
-            + " to your subscriptions!"
+            + ") to your subscriptions!"
             + bip_bop()
             + "\n👀Look! By default when I found a new post I try to send <b>Normal Link</b>.\n"
             + "If you want to always receive <b>Telegraph Link</b> (to open with <u>Instant View</u>) click the button below"

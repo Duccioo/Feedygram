@@ -27,11 +27,11 @@ class BatchProcess:
         """
         url_queue = self.db.get_all_urls()
         for item in url_queue:
-           
+
             await self.update_feed(item)
 
     async def update_feed(self, url):
-        
+
         print(url)
 
         telegram_users = self.db.get_users_for_url(url=url[0])
@@ -39,30 +39,34 @@ class BatchProcess:
         for user in telegram_users:
             if user[6]:  # is_active
                 try:
+                    
                     feed = FeedHandler.parse_N_entries(url[0])
-                    for post in (feed):
+                    print(feed)
+                    for post in reversed(feed):
+                        print("          ", post.title)
 
                         post_update_date = DateHandler.parse_datetime(
                             datetime=post.updated
                         )
                         url_update_date = DateHandler.parse_datetime(datetime=url[1])
 
-                        if post_update_date > url_update_date:
-                            message, reply_markup = feed_message.send_feed(
-                                user[8], user[7], post.link, post.title
+                    if post_update_date > url_update_date:
+                        print("!!!!nuovo post trovato!!!!")
+                        message, reply_markup = feed_message.send_feed(
+                            user[8], user[7], post.link, post.title
+                        )
+                        try:
+                            await self.bot.bot.send_message(
+                                chat_id=user[0],
+                                text=message,
+                                parse_mode="HTML",
+                                reply_markup=reply_markup,
                             )
-                            try:
-                                await self.bot.bot.send_message(
-                                    chat_id=user[0],
-                                    text=message,
-                                    parse_mode="HTML",
-                                    reply_markup=reply_markup,
-                                )
 
-                            except TelegramError:
-                                print(TelegramError)
-                                # handle all other telegram related errors
-                                pass
+                        except TelegramError:
+                            print(TelegramError)
+                            # handle all other telegram related errors
+                            pass
 
                 except:
                     traceback.print_exc()
