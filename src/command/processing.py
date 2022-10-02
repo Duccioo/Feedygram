@@ -39,9 +39,9 @@ class BatchProcess:
         for user in telegram_users:
             if user[6]:  # is_active
                 try:
-                    
+
                     feed = FeedHandler.parse_N_entries(url[0])
-                    print(feed)
+
                     for post in reversed(feed):
                         print("          ", post.title)
 
@@ -50,23 +50,23 @@ class BatchProcess:
                         )
                         url_update_date = DateHandler.parse_datetime(datetime=url[1])
 
-                    if post_update_date > url_update_date:
-                        print("!!!!nuovo post trovato!!!!")
-                        message, reply_markup = feed_message.send_feed(
-                            user[8], user[7], post.link, post.title
-                        )
-                        try:
-                            await self.bot.bot.send_message(
-                                chat_id=user[0],
-                                text=message,
-                                parse_mode="HTML",
-                                reply_markup=reply_markup,
+                        if post_update_date > url_update_date:
+                            print("!!!!nuovo post trovato!!!!")
+                            message, reply_markup = feed_message.send_feed(
+                                user[8], user[7], post.link, post.title
                             )
+                            try:
+                                await self.bot.bot.send_message(
+                                    chat_id=user[0],
+                                    text=message,
+                                    parse_mode="HTML",
+                                    reply_markup=reply_markup,
+                                )
 
-                        except TelegramError:
-                            print(TelegramError)
-                            # handle all other telegram related errors
-                            pass
+                            except TelegramError:
+                                print(TelegramError)
+                                # handle all other telegram related errors
+                                pass
 
                 except:
                     traceback.print_exc()
@@ -81,11 +81,19 @@ class BatchProcess:
                         text=message,
                         parse_mode="HTML",
                     )
-
+        print(
+            "ultimo aggiornamento alle:",
+            FeedHandler.parse_first_entries(url[0]).updated,
+        )
         self.db.update_url(
             url=url[0],
-            last_updated=str(DateHandler.get_datetime_now()),
-            last_title=str((FeedHandler.parse_first_entries(url[0])).title),
+            # last_updated=str(DateHandler.get_datetime_now()),
+            last_updated=DateHandler.parse_datetime(
+                datetime=FeedHandler.parse_first_entries(url[0]).updated
+            ),
+            last_title=str(
+                (FeedHandler.parse_first_entries(url[0])).title.replace('"', "'")
+            ),
         )
 
     def set_running(self, running):

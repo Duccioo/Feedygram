@@ -11,8 +11,6 @@ class DatabaseHandler(object):
 
         self.filehandler = FileHandler(relative_root_path="..")
         self.database_path = self.filehandler.join_path(*database_path)
-       
-        
 
         if not self.filehandler.file_exists(self.database_path):
             sql_command = self.filehandler.load_file(
@@ -231,13 +229,13 @@ class DatabaseHandler(object):
         conn = sqlite3.connect(self.database_path)
         cursor = conn.cursor()
         if telegraph != None:
-           
+
             cursor.execute(
                 "UPDATE web_user SET alias=(?), telegraph=(?) WHERE telegram_id=(?) AND url=(?)",
                 (alias, telegraph, telegram_id, url),
             )
         else:
-            
+
             cursor.execute(
                 "UPDATE web_user SET alias=(?) WHERE telegram_id=(?) AND url=(?)",
                 (alias, telegram_id, url),
