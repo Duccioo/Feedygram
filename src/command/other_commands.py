@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # -----
-from utils.make_text import number_to_emoji
+from utils.make_text import number_to_emoji, random_emoji
 
 
 def list_handler(db_telegraph, alias, url, index):
@@ -40,7 +40,7 @@ def list_handler(db_telegraph, alias, url, index):
 
 
 def help_message():
-    return "Da implementare"
+    return ""
 
 
 def stop_handler(db, telegram_user):
@@ -50,12 +50,13 @@ def stop_handler(db, telegram_user):
 
 def about_message(number):
     message = (
-        ""
-        + ""
-        + ""
-        + ""
+        "Hi🙃! Hope you are finding this bot useful, if so then spread the word and tell your friends about Feedergraph!!"
         + "There are currently "
         + str(number_to_emoji((number[0][0])))
-        + " active users"
+        + " active users\n"
+        "\n This bot was made by Duccio Meconcelli on the base of <a href=''> RobotRSS by </a>\n\n"
+        + "The telegraph webpage converter library was made by \n\n"
+        + "For more info check my github page:<a href=''>@Duccioo</a>"
+        + "And for other stuff I make check my website: <a href=''>duccio.me</a>"
     )
     return message

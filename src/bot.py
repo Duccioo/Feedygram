@@ -135,6 +135,7 @@ class Feedergraph(object):
         )
 
         self.job_queue.run_repeating(self.processing.run, int(update_interval), first=1)
+        print("OK BOT STARTED.")
         self.bot.run_polling()
 
     def _addCommand(self, command):

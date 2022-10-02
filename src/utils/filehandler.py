@@ -9,7 +9,6 @@ class FileHandler(object):
             self.base_path = os.path.abspath(
                 os.path.join(os.path.dirname(__file__), relative_root_path)
             )
-            print("relative Path", self.base_path)
 
         else:
             print(os.path.dirname(__file__))
