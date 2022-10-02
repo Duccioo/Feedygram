@@ -1,15 +1,11 @@
 # /bin/bash/python/
-
-
 from telegram.error import TelegramError
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import traceback
+
+# -----
 from utils.datehandler import DateHandler
 from utils.feedhandler import FeedHandler
-import traceback
-import webpage2telegraph
-import random
 import command.feed_message as feed_message
-import asyncio
 
 
 # class BatchProcess(threading.Thread):
@@ -34,10 +30,15 @@ class BatchProcess:
 
         print(url)
 
+        # mi prendo tutti gli utenti che hanno quel particolare url salvato
         telegram_users = self.db.get_users_for_url(url=url[0])
+
+        # istanzio la variabile per aggiornare la data
+        update_date = False
 
         for user in telegram_users:
             if user[6]:  # is_active
+
                 try:
 
                     feed = FeedHandler.parse_N_entries(url[0])
@@ -52,6 +53,8 @@ class BatchProcess:
 
                         if post_update_date > url_update_date:
                             print("!!!!nuovo post trovato!!!!")
+                            update_date = True
+
                             message, reply_markup = feed_message.send_feed(
                                 user[8], user[7], post.link, post.title
                             )
@@ -81,20 +84,18 @@ class BatchProcess:
                         text=message,
                         parse_mode="HTML",
                     )
-        print(
-            "ultimo aggiornamento alle:",
-            FeedHandler.parse_first_entries(url[0]).updated,
-        )
-        self.db.update_url(
-            url=url[0],
-            # last_updated=str(DateHandler.get_datetime_now()),
-            last_updated=DateHandler.parse_datetime(
-                datetime=FeedHandler.parse_first_entries(url[0]).updated
-            ),
-            last_title=str(
-                (FeedHandler.parse_first_entries(url[0])).title.replace('"', "'")
-            ),
-        )
+
+        if update_date == True:
+            print("aggiorno la data perchè ho trovato un nuovo articolo")
+            self.db.update_url(
+                url=url[0],
+                last_updated=DateHandler.parse_datetime(
+                    datetime=FeedHandler.parse_first_entries(url[0]).updated
+                ),
+                last_title=str(
+                    (FeedHandler.parse_first_entries(url[0])).title.replace('"', "'")
+                ),
+            )
 
     def set_running(self, running):
         self.running = running

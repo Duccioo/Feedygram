@@ -14,8 +14,8 @@ import os
 from dotenv import load_dotenv
 import random
 
+# -----
 from utils.database import DatabaseHandler
-
 from utils.feedhandler import FeedHandler
 from utils.make_text import bip_bop, random_emoji, number_to_emoji
 from command.processing import BatchProcess

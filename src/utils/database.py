@@ -1,8 +1,9 @@
 import sqlite3
+import os
 
+# ----
 from utils.filehandler import FileHandler
 from utils.datehandler import DateHandler as dh
-import os
 from utils.feedhandler import FeedHandler
 
 

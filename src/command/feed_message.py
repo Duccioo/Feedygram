@@ -1,6 +1,4 @@
-from ast import alias
-import asyncio
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import webpage2telegraph
 import random
 from utils.datehandler import DateHandler

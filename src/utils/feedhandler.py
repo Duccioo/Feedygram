@@ -1,6 +1,5 @@
 import feedparser
 import re
-import json
 import webpage2telegraph
 
 
