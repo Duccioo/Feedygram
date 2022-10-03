@@ -1,6 +1,6 @@
 
 
-<img src='https://res.cloudinary.com/duccio-me/image/upload/c_scale,r_300000,w_200/v1664798817/Tavolasaasdsegno_1_qzgmun.png' width=125 height=125 align="right"> </img>
+<img src='https://res.cloudinary.com/duccio-me/image/upload/c_scale,r_300000,w_200/v1664798817/Tavolasaasdsegno_1_qzgmun.png' align="right"> </img>
 
 # 🐕Feedygram
 
