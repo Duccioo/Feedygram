@@ -5,7 +5,7 @@
 
 A simple *🤖Telegram Bot🤖* to keep track of your **RSS Feeds!**
 
-*This bot was created with the base of [RobotRSS by hamitdurmus](https://github.com/hamitdurmus/robotrss).*
+*This bot was based on [RobotRSS by hamitdurmus](https://github.com/hamitdurmus/robotrss).*
 
 Since I had to rewrite much of the code because the repo was no longer updated, 
 I decided to create a new repo and while I was there I added various new features such 
