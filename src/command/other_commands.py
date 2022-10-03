@@ -59,15 +59,17 @@ def about_message(number):
     message = (
         "Hi🙃! Hope you are finding this bot useful, if so then spread the word and tell your friends about <a href='https://t.me/feedygram_bot'>🐕Feedygram</a>!!\n"
         + "For more info check the github page: <a href='https://github.com/Duccioo/Feedygram'>Feedygram</a>\n"
-        + "There are currently "
-        + str(number_to_emoji((number[0][0])))
-        + " active users\n"
-        "\nThis bot was made with passion "
+       
+        "\nThis bot was made with passion by "
         + random_emoji()
-        + " by Duccio Meconcelli (@Dosium).\n\nBased on the <a href='https://github.com/hamitdurmus/robotrss'>RobotRSS by hamitdurmus. </a>\n\n"
+        + "Duccio Meconcelli (@Dosium).\n\nBased on the <a href='https://github.com/hamitdurmus/robotrss'>RobotRSS by hamitdurmus. </a>\n\n"
         + "The telegraph <a href='https://github.com/NullPointerMaker/webpage2telegraph'>webpage converter library</a> was made by <a href='https://github.com/NullPointerMaker'>NullPointerMaker</a> \n\n"
         + "For other stuff I made check my GitHub: <a href='https://duccio.me/'>Duccioo</a>\n"
         +"And if you have any feedback, please reach out to me at meconcelliduccio@gmail.com or visit my website <a href='https://duccio.me/'>duccio.me</a>"
         + "<i>🐶Bau Bau🐶</i>"
+        
+         + "\n\nThere are currently "
+        + str(number_to_emoji((number[0][0])))
+        + "active users\n"
     )
     return message
