@@ -1,6 +1,5 @@
 
-![Logo](https://res.cloudinary.com/duccio-me/image/upload/c_scale,r_300000,w_200/v1664798817/Tavolasaasdsegno_1_qzgmun.png)
-
+<img src="https://res.cloudinary.com/duccio-me/image/upload/c_scale,r_300000,w_200/v1664798817/Tavolasaasdsegno_1_qzgmun.png" width=200 height=200 align="right">
 
 # 🐕Feedygram
 
