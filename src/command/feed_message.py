@@ -217,7 +217,6 @@ def send_feed(telegraph, alias, post_link, post_title):
         + "["
         + alias
         + "] \n--------------------------------------------------\n"
-        + title_type
         + " <a href='"
         + link_first
         + "'>"
