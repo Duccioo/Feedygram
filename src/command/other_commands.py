@@ -45,8 +45,8 @@ def help_message():
         + " *️⃣For add new RSS url type: <code>/add *your_RSS_url*</code>\n<i>(optional)</i> if you want to give a name for that entry try: <code>/add *your_RSS_url* *name_of_entry*\n\n"
         + "*️⃣For remove a feed type <code>/remove</code> and then click the target feed\n\n"
         + "*️⃣For change the default link type try <code>/list</code> then click the button below of your target link\n\n"
-        +"*️⃣For get an instant article try to type <code>/get</code> then select your feed and then select how many articles do you want to receive!\n\n"
-        +"*️⃣If you want to know more about this bot try <code>/about</code>"
+        + "*️⃣For get an instant article try to type <code>/get</code> then select your feed and then select how many articles do you want to receive!\n\n"
+        + "*️⃣If you want to know more about this bot try <code>/about</code>"
     )
 
 
@@ -58,15 +58,16 @@ def stop_handler(db, telegram_user):
 def about_message(number):
     message = (
         "Hi🙃! Hope you are finding this bot useful, if so then spread the word and tell your friends about <a href='https://t.me/feedygram_bot'>🐕Feedygram</a>!!\n"
+        + "For more info check the github page: <a href='https://github.com/Duccioo/Feedygram'>Feedygram</a>\n"
         + "There are currently "
         + str(number_to_emoji((number[0][0])))
         + " active users\n"
         "\nThis bot was made with passion "
         + random_emoji()
-        + " by Duccio Meconcelli on the base of <a href='https://github.com/hamitdurmus/robotrss'> RobotRSS by hamitdurmus </a>\n\n"
+        + " by Duccio Meconcelli (@Dosium).\n\nBased on the <a href='https://github.com/hamitdurmus/robotrss'>RobotRSS by hamitdurmus. </a>\n\n"
         + "The telegraph <a href='https://github.com/NullPointerMaker/webpage2telegraph'>webpage converter library</a> was made by <a href='https://github.com/NullPointerMaker'>NullPointerMaker</a> \n\n"
-        + "For more info check the github page: <a href='https://github.com/Duccioo/Feedygram'>Feedygram</a>\n"
-        + "And for other stuff I made check my website: <a href='https://duccio.me/'>duccio.me</a>\n"
-        +"<i>🐶Bau Bau🐶</i>"
+        + "For other stuff I made check my GitHub: <a href='https://duccio.me/'>Duccioo</a>\n"
+        +"And if you have any feedback, please reach out to me at meconcelliduccio@gmail.com or visit my website <a href='https://duccio.me/'>duccio.me</a>"
+        + "<i>🐶Bau Bau🐶</i>"
     )
     return message
