@@ -42,7 +42,7 @@ def list_handler(db_telegraph, alias, url, index):
 def help_message():
     return (
         "Need help? No Problem!!\n<b>QUICK START:</b>\n\n"
-        + " *️⃣For add new RSS url type: <code>/add *your_RSS_url*</code>\n<i>(optional)</i> if you want to give a name for that entry try: <code>/add *your_RSS_url* *name_of_entry*\n\n"
+        + "*️⃣For add new RSS url type: <code>/add *your_RSS_url*</code>\n<i>(optional)</i> if you want to give a name for that entry try: <code>/add *your_RSS_url* *name_of_entry*</code>\n\n"
         + "*️⃣For remove a feed type <code>/remove</code> and then click the target feed\n\n"
         + "*️⃣For change the default link type try <code>/list</code> then click the button below of your target link\n\n"
         + "*️⃣For get an instant article try to type <code>/get</code> then select your feed and then select how many articles do you want to receive!\n\n"
