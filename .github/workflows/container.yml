@@ -10,7 +10,7 @@ jobs:
       DOCKER_IMAGE: duccioo/feedergraph
       DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}  
-      DOCKER_TARGET_PLATFORM: linux/arm/v7    
+      DOCKER_TARGET_PLATFORM: linux/arm/v8    
     steps:
       -
         name: Checkout
