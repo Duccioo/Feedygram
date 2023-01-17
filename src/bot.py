@@ -282,7 +282,7 @@ class Feedergraph(object):
                 + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
                 + "Try to send a valid URL like this:"
                 + "\n\n"
-                + "<code>/add https://duccio.me/ "
+                + "<code>/add https://duccio.me/rss "
                 + random.choice(list)
                 + "</code>"
             )
@@ -305,7 +305,7 @@ class Feedergraph(object):
                 + str(is_parsable)
                 + "...😣.\n Have you tried other URLs?\n"
                 + "Try to send a valid URL like this:\n"
-                + "<code>/add https://duccio.me/ "
+                + "<code>/add https://duccio.me/rss "
                 + random.choice(list)
                 + "</code>"
             )
@@ -324,7 +324,7 @@ class Feedergraph(object):
                 + telegram_user.first_name
                 + "!I already have that url with stored in your subscriptions😒"
                 + "\nAdd a new one like this:\n"
-                + "<code>/add https://duccio.me/ "
+                + "<code>/add https://duccio.me/rss"
                 + random.choice(list)
                 + "</code>"
             )
@@ -346,7 +346,7 @@ class Feedergraph(object):
                     + "</code> and this time add a costum name!"
                     + bip_bop()
                     + "\nLike this: "
-                    + "<code>/add https://duccio.me/ "
+                    + "<code>/add https://duccio.me/rss "
                     + random.choice(list)
                     + "</code>"
                 )
@@ -367,7 +367,7 @@ class Feedergraph(object):
                 + "</b>\n\n...\n\nSorry 😥, "
                 + random.choice(list1)
                 + "\nTry to send my another feed like this:\n"
-                + "<code>/add https://duccio.me/ "
+                + "<code>/add https://duccio.me/rss "
                 + random.choice(list)
                 + "</code>"
             )
