@@ -1,310 +1,340 @@
 import sqlite3
+import logging
 import os
+from typing import Optional, List, Tuple
+from urllib.parse import urlparse
+from datetime import datetime
 
-# ----
+# ---
 from utils.filehandler import FileHandler
 from utils.datehandler import DateHandler as dh
 from utils.feedhandler import FeedHandler
 
+# Configurazione logging
+logger = logging.getLogger(__name__)
 
-class DatabaseHandler(object):
-    def __init__(self, *database_path):
 
+class DatabaseHandler:
+    def __init__(self, *database_path: str):
         self.filehandler = FileHandler(relative_root_path="..")
         self.database_path = self.filehandler.join_path(*database_path)
+        logger.info("Database path: %s", self.database_path)
 
+        self._init_database()
+        self._enable_foreign_keys()
+
+    def _init_database(self) -> None:
+        """Inizializza il database se non esiste"""
         if not self.filehandler.file_exists(self.database_path):
-            sql_command = self.filehandler.load_file(
-                os.path.join("database", "setup.sql")
+            logger.info("Creazione nuovo database: %s", self.database_path)
+            self._execute_schema_script()
+
+    def _enable_foreign_keys(self) -> None:
+        """Abilita i vincoli di foreign key"""
+        with self._get_connection() as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+    def _execute_schema_script(self) -> None:
+        """Esegue lo script di inizializzazione del database"""
+
+        schema_file = os.path.join("database", "setup.sql")
+
+        try:
+            with self.filehandler.open_file(schema_file) as f:
+                schema = f.read()
+
+            with self._get_connection() as conn:
+                conn.executescript(schema)
+            logger.info("Schema database inizializzato correttamente")
+
+        except Exception as e:
+            logger.error("Errore nell'inizializzazione del database: %s", str(e))
+            raise RuntimeError("Impossibile inizializzare il database") from e
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Restituisce una connessione al database"""
+        return sqlite3.connect(self.database_path, check_same_thread=False)
+
+    def get_all_feeds(self) -> List[Tuple[str, datetime, str]]:
+        """Restituisce tutti i feed attivi con ultimo aggiornamento e alias principale"""
+        query = """
+            SELECT w.url, w.last_updated,w.last_title, MIN(wu.alias)
+            FROM web w
+            JOIN web_user wu ON w.url = wu.url
+            GROUP BY w.url
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query)
+            return cursor.fetchall()
+
+    def get_active_users_for_feed(self, url: str) -> List[Tuple[int, bool]]:
+        """Restituisce gli ID utente attivi e preferenze Telegraph per un feed"""
+        query = """
+            SELECT wu.telegram_id, wu.telegraph
+            FROM web_user wu
+            JOIN user u ON wu.telegram_id = u.telegram_id
+            WHERE wu.url = ? AND u.is_active = 1
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (url,))
+            return [(row[0], bool(row[1])) for row in cursor.fetchall()]
+
+    def update_feed(self, url: str, last_updated: datetime, last_title: str) -> None:
+        """Aggiorna i metadati di un feed"""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE web SET last_updated = ?, last_title = ? WHERE url = ?",
+                (last_updated, last_title, url),
             )
 
-            conn = sqlite3.connect(self.database_path)
-            cursor = conn.cursor()
-            cursor.executescript(sql_command)
-            conn.commit()
-            conn.close()
-
+    # Metodi per la gestione degli utenti
     def add_user(
         self,
-        telegram_id,
-        username,
-        firstname,
-        lastname,
-        language_code,
-        is_bot,
-        is_active,
-    ):
-        """Adds a user to sqlite database
-
-        Args:
-            param1 (int): The telegram_id of a user.
-            param2 (str): The username of a user.
-            param3 (str): The firstname of a user.
-            param4 (str): The lastname of a user.
-            param5 (str): The language_code of a user.
-            param6 (str): The is_bot flag of a user.
+        telegram_id: int,
+        username: str,
+        firstname: str,
+        lastname: str,
+        language_code: str,
+        is_bot: bool,
+        is_active: bool = True,
+    ) -> None:
+        """Aggiunge un utente al database"""
+        query = """
+            INSERT INTO user (telegram_id, username, firstname, lastname, 
+                            language, is_bot, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                username = excluded.username,
+                firstname = excluded.firstname,
+                lastname = excluded.lastname,
+                language = excluded.language,
+                is_bot = excluded.is_bot,
+                is_active = excluded.is_active
         """
-
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "INSERT OR IGNORE INTO user VALUES (?,?,?,?,?,?,?)",
-            (
-                telegram_id,
-                username,
-                firstname,
-                lastname,
-                language_code,
-                is_bot,
-                is_active,
-            ),
+        params = (
+            telegram_id,
+            username,
+            firstname,
+            lastname,
+            language_code,
+            int(is_bot),
+            int(is_active),
         )
 
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(query, params)
 
-    def remove_user(self, telegram_id):
-        """Removes a user to sqlite database
+    def remove_user(self, telegram_id: int) -> None:
+        """Rimuove un utente e tutti i suoi collegamenti"""
+        query = "DELETE FROM user WHERE telegram_id = ?"
+        with self._get_connection() as conn:
+            conn.execute(query, (telegram_id,))
 
-        Args:
-            param1 (int): The telegram_id of a user.
+    def update_user(self, telegram_id: int, **kwargs) -> None:
+        """Aggiorna i dati di un utente"""
+        if not kwargs:
+            return
+
+        set_clause = ", ".join([f"{key} = ?" for key in kwargs])
+        query = f"""
+            UPDATE user 
+            SET {set_clause}
+            WHERE telegram_id = ?
         """
+        params = list(kwargs.values()) + [telegram_id]
 
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
+        with self._get_connection() as conn:
+            conn.execute(query, params)
 
-        cursor.execute("DELETE FROM user WHERE telegram_id=" + str(telegram_id))
+    def get_user(self, telegram_id: int) -> Optional[Tuple]:
+        """Recupera un utente per ID"""
+        query = "SELECT * FROM user WHERE telegram_id = ?"
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (telegram_id,))
+            return cursor.fetchone()
+        # Metodi utente migliorati
 
-        conn.commit()
-        conn.close()
-
-    def update_user(self, telegram_id, **kwargs):
-        """Updates a user to sqlite database
-
-        Args:
-            param1 (int): The telegram_id of a user.
-            param2 (kwargs): The attributes to be updated of a user.
-        """
-
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        sql_command = "UPDATE user SET "
-        for key in kwargs:
-            sql_command = sql_command + str(key) + "='" + str(kwargs[key]) + "', "
-        sql_command = sql_command[:-2] + " WHERE telegram_id=" + str(telegram_id)
-
-        cursor.execute(sql_command)
-
-        conn.commit()
-        conn.close()
-
-    def get_user(self, telegram_id):
-        """Returns a user by its id
-
-        Args:
-            param1 (int): The telegram_id of a user.
-
-        Returns:
-            list: The return value. A list containing all attributes of a user.
-        """
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT * FROM user WHERE telegram_id = " + str(telegram_id))
-        result = cursor.fetchone()
-
-        conn.commit()
-        conn.close()
-
-        return result
-
-    def add_url(self, url, time=dh.get_datetime_now()):
-        article = FeedHandler.parse_first_entries(url)
-        if article != False:
-            last_title = article.title
-            conn = sqlite3.connect(self.database_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR IGNORE INTO web (url, last_title,last_updated) VALUES (?,?,?)",
-                (url, last_title, time),
-            )
-            conn.commit()
-            conn.close()
-        else:
-            print("errore nel trovare il feed")
-
-    def remove_url(self, url):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        sql_command = "DELETE FROM web_user WHERE url='" + str(url) + "';"
-        cursor.execute(sql_command)
-
-        sql_command = (
-            "DELETE FROM web WHERE web.url NOT IN (SELECT web_user.url from web_user)"
-        )
-        cursor.execute(sql_command)
-
-        conn.commit()
-        conn.close()
-
-    def update_url(self, url, **kwargs):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        sql_command = "UPDATE web SET "
-        for key in kwargs:
-            sql_command = sql_command + str(key) + '="' + str(kwargs[key]) + '", '
-        if len(kwargs) == 0:
-            sql_command = sql_command + " WHERE url='" + str(url) + "';"
-        else:
-            sql_command = sql_command[:-2] + " WHERE url='" + str(url) + "';"
-
-        cursor.execute(sql_command)
-
-        conn.commit()
-        conn.close()
-
-    def get_url(self, url):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        sql_command = "SELECT * FROM web WHERE url='" + str(url) + "';"
-
-        cursor.execute(sql_command)
-        result = cursor.fetchone()
-
-        conn.commit()
-        conn.close()
-
-        return result
-
-    def get_all_urls(self):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        sql_command = "SELECT * FROM web;"
-
-        cursor.execute(sql_command)
-        result = cursor.fetchall()
-
-        conn.commit()
-        conn.close()
-
-        return result
-
-    def add_user_bookmark(self, telegram_id, url, alias):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        # salvo con una data più vecchia :) perchè....
-        self.add_url(
-            url, dh.parse_datetime("01-05-1999")
-        )  # aggiungo l'url al database e ne salvo sia l'ultimo update che il titolo dell'ultimo articolo (sempre se esiste)
-        cursor.execute(
-            "INSERT OR IGNORE INTO web_user(url,telegram_id,alias,telegraph) VALUES (?,?,?,?)",
-            (url, telegram_id, alias, False),
-        )
-
-        conn.commit()
-        conn.close()
-
-    def remove_user_bookmark(self, telegram_id, url):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "DELETE FROM web_user WHERE telegram_id=(?) AND url = (?)",
-            (telegram_id, url),
-        )
-        cursor.execute(
-            "DELETE FROM web WHERE web.url NOT IN (SELECT web_user.url from web_user)"
-        )
-
-        conn.commit()
-        conn.close()
-
-    def update_user_bookmark(self, telegram_id, url, alias, telegraph=False):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-        if telegraph != None:
-
-            cursor.execute(
-                "UPDATE web_user SET alias=(?), telegraph=(?) WHERE telegram_id=(?) AND url=(?)",
-                (alias, telegraph, telegram_id, url),
-            )
-        else:
-
-            cursor.execute(
-                "UPDATE web_user SET alias=(?) WHERE telegram_id=(?) AND url=(?)",
-                (alias, telegram_id, url),
+    def deactivate_user(self, telegram_id: int) -> None:
+        """Disattiva un utente"""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE user SET is_active = 0 WHERE telegram_id = ?", (telegram_id,)
             )
 
-        conn.commit()
-        conn.close()
+    # Metodi per la gestione dei feed
+    def add_url(self, url: str) -> None:
+        """Aggiunge un feed al database"""
+        if not self._is_valid_url(url):
+            raise ValueError("URL non valido")
 
-    def get_user_bookmark(self, telegram_id, alias):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
+        query = """
+            INSERT INTO web (url, last_title, last_updated)
+            VALUES (?, ?, ?)
+            ON CONFLICT(url) DO NOTHING
+        """
+        params = (url, "", dh.parse_datetime("01-05-1999"))
 
-        cursor.execute(
-            "SELECT web.url, web_user.alias, web.last_updated, web_user.telegraph FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
-            + str(telegram_id)
-            + " AND LOWER(web_user.alias) ='"
-            + str(alias).lower()
-            + "';"
-        )
+        with self._get_connection() as conn:
+            conn.execute(query, params)
 
-        result = cursor.fetchone()
+    def remove_url(self, url: str) -> None:
+        """Rimuove un feed e tutti i collegamenti utente"""
+        query = "DELETE FROM web WHERE url = ?"
+        with self._get_connection() as conn:
+            conn.execute(query, (url,))
 
-        conn.commit()
-        conn.close()
+    def update_url(self, url: str, **kwargs) -> None:
+        """Aggiorna i dati di un feed"""
+        if not kwargs:
+            return
 
-        return result
+        set_clause = ", ".join([f"{key} = ?" for key in kwargs])
+        query = f"""
+            UPDATE web 
+            SET {set_clause}
+            WHERE url = ?
+        """
+        params = list(kwargs.values()) + [url]
 
-    def get_urls_for_user(self, telegram_id):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT web.url, web_user.alias, web.last_updated, web.last_title FROM web, web_user WHERE web_user.url = web.url AND web_user.telegram_id ="
-            + str(telegram_id)
-            + ";"
-        )
-        result = cursor.fetchall()
-        conn.commit()
-        conn.close()
-        return result
+        with self._get_connection() as conn:
+            conn.execute(query, params)
 
-    def get_users_for_url(self, url):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
+    def get_url(self, url: str) -> Optional[Tuple]:
+        """Recupera un feed per URL"""
+        query = "SELECT * FROM web WHERE url = ?"
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (url,))
+            return cursor.fetchone()
 
-        cursor.execute(
-            "SELECT user.*, web_user.alias, web_user.telegraph FROM user, web_user WHERE web_user.telegram_id = user.telegram_id AND web_user.url ='"
-            + str(url)
-            + "';"
-        )
-        result = cursor.fetchall()
+    def get_all_urls(self) -> List[Tuple]:
+        """Restituisce tutti i feed registrati"""
+        query = "SELECT * FROM web"
+        with self._get_connection() as conn:
+            cursor = conn.execute(query)
+            return cursor.fetchall()
 
-        conn.commit()
-        conn.close()
+    # Metodi per i bookmark degli utenti
+    def add_user_bookmark(
+        self, telegram_id: int, url: str, alias: str, telegraph: bool = False
+    ) -> None:
+        """Aggiunge un bookmark per un utente"""
+        # self._validate_alias(alias)
 
-        return result
+        try:
+            self.add_url(url)
+        except ValueError:
+            logger.warning("Feed già esistente: %s", url)
 
-    def get_total_user(self, active=False):
-        conn = sqlite3.connect(self.database_path)
-        cursor = conn.cursor()
+        query = """
+            INSERT INTO web_user (url, telegram_id, alias, telegraph)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(url, telegram_id) DO UPDATE SET
+                alias = excluded.alias,
+                telegraph = excluded.telegraph
+        """
+        params = (url, telegram_id, alias, int(telegraph))
 
-        if active:
-            cursor.execute(
-                "SELECT COUNT(user.username) FROM user WHERE user.is_active = 1 "
-            )
-        else:
-            cursor.execute("SELECT COUNT(user.username) FROM user ")
+        with self._get_connection() as conn:
+            conn.execute(query, params)
 
-        result = cursor.fetchall()
-        conn.commit()
-        conn.close()
-        return result
+    def remove_user_bookmark(self, telegram_id: int, url: str) -> None:
+        """Rimuove un bookmark per un utente"""
+        query = """
+            DELETE FROM web_user 
+            WHERE telegram_id = ? AND url = ?
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (telegram_id, url))
+
+    def update_user_bookmark(
+        self,
+        telegram_id: int,
+        url: str,
+        alias: Optional[str] = None,
+        telegraph: Optional[bool] = None,
+    ) -> None:
+        """Aggiorna un bookmark esistente"""
+        updates = {}
+        if alias:
+            # self._validate_alias(alias)
+            updates["alias"] = alias
+        if telegraph is not None:
+            updates["telegraph"] = int(telegraph)
+
+        if not updates:
+            return
+
+        set_clause = ", ".join([f"{key} = ?" for key in updates])
+        query = f"""
+            UPDATE web_user 
+            SET {set_clause}
+            WHERE telegram_id = ? AND url = ?
+        """
+        params = list(updates.values()) + [telegram_id, url]
+
+        with self._get_connection() as conn:
+            conn.execute(query, params)
+
+    def get_user_bookmark(self, telegram_id: int, alias: str) -> Optional[Tuple]:
+        """Recupera un bookmark per alias utente"""
+        query = """
+            SELECT w.url, wu.alias, w.last_updated, wu.telegraph
+            FROM web_user wu
+            JOIN web w ON wu.url = w.url
+            WHERE wu.telegram_id = ? AND wu.alias = ?
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (telegram_id, alias))
+            return cursor.fetchone()
+
+    def get_urls_for_user(self, telegram_id: int) -> List[Tuple]:
+        """Restituisce tutti i bookmark di un utente"""
+        query = """
+            SELECT w.url, wu.alias, w.last_updated, w.last_title
+            FROM web_user wu
+            JOIN web w ON wu.url = w.url
+            WHERE wu.telegram_id = ?
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (telegram_id,))
+            return cursor.fetchall()
+
+    def get_users_for_url(self, url: str) -> List[Tuple]:
+        """Restituisce tutti gli utenti iscritti a un feed"""
+        query = """
+            SELECT u.*, wu.alias, wu.telegraph
+            FROM web_user wu
+            JOIN user u ON wu.telegram_id = u.telegram_id
+            WHERE wu.url = ?
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (url,))
+            return cursor.fetchall()
+
+    def get_total_users(self, active_only: bool = False) -> int:
+        """Conta gli utenti totali"""
+        query = "SELECT COUNT(*) FROM user"
+        if active_only:
+            query += " WHERE is_active = 1"
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(query)
+            return cursor.fetchone()[0]
+
+    # Metodi di validazione
+    @staticmethod
+    def _is_valid_url(url: str) -> bool:
+        """Valida un URL"""
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _validate_alias(alias: str) -> None:
+        """Valida il formato di un alias"""
+        if not 3 <= len(alias) <= 32:
+            raise ValueError("L'alias deve essere tra 3 e 32 caratteri")
+        if not alias.isalnum():
+            raise ValueError("L'alias può contenere solo lettere e numeri")

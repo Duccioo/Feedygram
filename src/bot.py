@@ -9,15 +9,18 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 import os
+import logging
 from dotenv import load_dotenv
 import random
+import pathlib
+from typing import Any, Dict
 
 # -----
 from utils.database import DatabaseHandler
 from utils.feedhandler import FeedHandler
-from utils.make_text import bip_bop, random_emoji, number_to_emoji
+from utils.make_text import bip_bop, random_emoji
 from command.processing import BatchProcess
 from command.other_commands import (
     list_handler,
@@ -29,160 +32,135 @@ import command.feed_message as feed_message
 from command.important_command import remove_list_handler, get_list_handler
 
 
-load_dotenv()
+# Configurazione logging
+logging.basicConfig(format="%(asctime)s - %(name)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+load_dotenv(override=True)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 UPDATE_INTERVAL = os.environ["UPDATE_INTERVAL"]
 
 
-def check_change_feed_link(obj):
-    try:
-        if obj["option"] == "change_feed_link":
-            return True
-        else:
-            return False
-    except:
-        return False
+def validate_callback_data(pattern: str):
+    """Factory per creare funzioni di validazione callback data"""
 
+    def checker(callback_data: Dict[str, Any]) -> bool:
+        return callback_data.get("option") == pattern
 
-def check_send_feed(obj):
-    try:
-        if obj["option"] == "send_feed":
-            return True
-        else:
-            return False
-    except:
-        return False
-
-
-def check_how_many_feed(obj):
-    try:
-        if obj["option"] == "select_how_many_feed":
-            return True
-        else:
-            return False
-    except:
-        return False
-
-
-def check_change_link(obj):
-    try:
-        if obj["option"] == "change_database":
-            return True
-        else:
-            return False
-    except:
-        return False
-
-
-def check_remove_feed(obj):
-    try:
-        if obj["option"] == "delete_feed":
-            return True
-        else:
-            return False
-    except:
-
-        return False
+    return checker
 
 
 class Feedergraph(object):
     def __init__(self, telegram_token, update_interval):
 
+        data_path = pathlib.Path(__file__).parent / "database" / "data"
+        if not os.path.exists(data_path):
+            os.makedirs(data_path)
+
         # Initialize bot internals
         self.db = DatabaseHandler("database", "data", "datastore.db")
 
+        self._init_bot(telegram_token)
+        self._register_handlers()
+        self._start_processing(update_interval)
+
+    def _validate_config(self, token: str, interval: str) -> None:
+        if not token:
+            raise ValueError("Telegram token mancante")
+        try:
+            int(interval)
+        except ValueError:
+            raise ValueError("UPDATE_INTERVAL deve essere un intero")
+
+    def _init_bot(self, token: str) -> None:
         self.bot = (
             Application.builder()
-            .token(telegram_token)
+            .token(token)
             .concurrent_updates(True)
             .arbitrary_callback_data(True)
             .build()
         )
         self.job_queue = self.bot.job_queue
 
-        # Add Commands to bot
-        self._addCommand(CommandHandler("start", self.start))
-        self._addCommand(CommandHandler("stop", self.stop))
-        self._addCommand(CommandHandler("help", self.help))
-        self._addCommand(CommandHandler("list", self.list))
-        self._addCommand(CommandHandler("about", self.about))
-        self._addCommand(CommandHandler("add", self.add))
-        self._addCommand(CommandHandler("get", self.get))
-        self._addCommand(CommandHandler("remove", self.remove))
+    def _register_handlers(self) -> None:
+        handlers = [
+            CommandHandler("start", self.start),
+            CommandHandler("stop", self.stop),
+            CommandHandler("help", self.help),
+            CommandHandler("list", self.list),
+            CommandHandler("about", self.about),
+            CommandHandler("add", self.add),
+            CommandHandler("get", self.get),
+            CommandHandler("remove", self.remove),
+        ]
 
-        self.bot.add_handler(
-            CallbackQueryHandler(self.change_list_type, pattern=check_change_link)
-        )
+        callback_patterns = {
+            "change_database": validate_callback_data("change_database"),
+            "delete_feed": validate_callback_data("delete_feed"),
+            "select_how_many_feed": validate_callback_data("select_how_many_feed"),
+            "send_feed": validate_callback_data("send_feed"),
+            "change_feed_link": validate_callback_data("change_feed_link"),
+        }
 
-        self.bot.add_handler(
-            CallbackQueryHandler(self.remove, pattern=check_remove_feed)
-        )
+        for pattern, handler in [
+            (callback_patterns["change_database"], self.change_list_type),
+            (callback_patterns["delete_feed"], self.remove),
+            (callback_patterns["select_how_many_feed"], self.get),
+            (callback_patterns["send_feed"], self.get_n_feed),
+            (callback_patterns["change_feed_link"], self.update_message),
+        ]:
+            self.bot.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
-        self.bot.add_handler(
-            CallbackQueryHandler(self.get, pattern=check_how_many_feed)
-        )
-        self.bot.add_handler(
-            CallbackQueryHandler(self.get_n_feed, pattern=check_send_feed)
-        )
+        for handler in handlers:
+            self.bot.add_handler(handler)
 
-        self.bot.add_handler(
-            CallbackQueryHandler(self.update_message, pattern=check_change_feed_link)
-        )
-
-        # Start the Bot
-        self.processing = BatchProcess(
-            database=self.db, update_interval=update_interval, bot=self.bot
-        )
-
-        self.job_queue.run_repeating(self.processing.run, int(update_interval), first=1)
-        print("OK BOT STARTED.")
-        self.bot.run_polling()
-
-    def _addCommand(self, command):
-        """
-        Registers a new command to the bot
-        """
-        self.bot.add_handler(command)
-
-    async def start(self, update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Send a message when the command /start is issued.
-        """
-        telegram_user = update.message.from_user
-
-        # Add new User if not exists
-        if not self.db.get_user(telegram_id=telegram_user.id):
-
-            message = (
-                "Ciao👋! It's your first time😏?"
-                + bip_bop()
-                + "\nWell... Everyone has had a first time😌, so to start add a new Feeeed in your list with <b>/add</b>\n"
-                + "If you are lost send me <b>/help</b> then Then I'll give you some tips😜\n"
-                + bip_bop()
+    def _start_processing(self, interval: str) -> None:
+        try:
+            interval_int = int(interval)
+            self.processing = BatchProcess(
+                database=self.db, update_interval=interval_int, bot=self.bot
             )
-            await update.message.reply_text(message, parse_mode="HTML")
+            self.job_queue.run_repeating(self.processing.run, interval_int, first=1)
+            logger.info("Bot avviato correttamente")
+            self.bot.run_polling()
+        except Exception as e:
+            logger.critical(f"Errore avvio bot: {e}")
+            raise
 
-            # Aggiungo utente al database
-            self.db.add_user(
-                telegram_id=telegram_user.id,
-                username=telegram_user.username,
-                firstname=telegram_user.first_name,
-                lastname=telegram_user.last_name,
-                language_code=telegram_user.language_code,
-                is_bot=telegram_user.is_bot,
-                is_active=1,
+    async def start(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        try:
+            if not self.db.get_user(user.id):
+                await self._handle_new_user(update, user)
+            self.db.update_user(user.id, is_active=1)
+            await update.message.reply_text(
+                f"{bip_bop()}OK Human! Now everything is ready{bip_bop()}\n"
+                f"Use <b>/help</b> if you need some tips!",
+                parse_mode="HTML",
             )
+        except Exception as e:
+            logger.error(f"Errore durante /start: {e}")
+            await self._send_error_message(update)
 
-        # altrimenti se ho già segnato l'utente lo attivo (in caso fosse inattivo)
-        self.db.update_user(telegram_id=telegram_user.id, is_active=1)
-
-        message = (
-            bip_bop()
-            + "OK Human! Now everything is ready"
-            + bip_bop()
-            + "\nUse <b>/help</b> if you need some tips!"
+    async def _handle_new_user(self, update, user: Any) -> None:
+        welcome_msg = (
+            "Ciao👋! It's your first time😏?"
+            f"{bip_bop()}\nWell... Everyone has had a first time😌, "
+            "so to start add a new Feeeed in your list with <b>/add</b>\n"
+            "If you are lost send me <b>/help</b> then I'll give you some tips😜\n"
+            f"{bip_bop()}"
         )
-        await update.message.reply_text(message, parse_mode="HTML")
+        await update.message.reply_text(welcome_msg, parse_mode="HTML")
+        self.db.add_user(
+            telegram_id=user.id,
+            username=user.username,
+            firstname=user.first_name,
+            lastname=user.last_name,
+            language_code=user.language_code,
+            is_bot=user.is_bot,
+            is_active=1,
+        )
 
     async def update_message(self, update, context):
         query = update.callback_query
@@ -305,7 +283,7 @@ class Feedergraph(object):
                 + str(is_parsable)
                 + "...😣.\n Have you tried other URLs?\n"
                 + "Try to send a valid URL like this:\n"
-                + "<code>/add https://duccio.me/rss "
+                + "<code>/add https://duccio.me/rss  \t"
                 + random.choice(list)
                 + "</code>"
             )
@@ -322,9 +300,9 @@ class Feedergraph(object):
             message = (
                 "Sorry, "
                 + telegram_user.first_name
-                + "!I already have that url with stored in your subscriptions😒"
+                + "! I already have that url with stored in your subscriptions😒"
                 + "\nAdd a new one like this:\n"
-                + "<code>/add https://duccio.me/rss"
+                + "<code>/add https://duccio.me/rss "
                 + random.choice(list)
                 + "</code>"
             )
@@ -357,12 +335,13 @@ class Feedergraph(object):
 
         elif len(args) >= 3:
             arg_entry = ""
-            for i in range(3, len(args)):
-                arg_entry = arg_entry + " " + args[i]
+            for i in range(2, len(args)):
+                arg_entry += args[i] + " "
+
         list1 = ["I'm stressed...😣", "I'm bored... 🥱", "I'm in love...🥰"]
         if any(arg_entry in entry for entry in entries):
             message = (
-                "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAMEEE!!"
+                "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAME!!"
                 + bip_bop()
                 + "</b>\n\n...\n\nSorry 😥, "
                 + random.choice(list1)
@@ -438,6 +417,7 @@ class Feedergraph(object):
                     parse_mode="HTML",
                     reply_markup=keyboard,
                     chat_id=data["user"],
+                    link_preview_options=LinkPreviewOptions(prefer_small_media=True),
                 )
 
     async def get(self, update, context):

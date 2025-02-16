@@ -61,7 +61,7 @@ def remove_list_handler(feed_list, telegram_user):
         message = (
             "Well, it looks like you don't have any feeds saved🫢"
             + bip_bop()
-            + ".\nIf you don't know what to do, type <b>/help</b>!!"
+            + ".\nIf you don't know what to do, type <code>/help</code>!!"
         )
         keyboard_Markup = InlineKeyboardMarkup([[]])
 
