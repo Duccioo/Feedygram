@@ -56,6 +56,11 @@ def stop_handler(db, telegram_user):
 
 
 def about_message(number):
+    try:
+        _number = number[0][0]
+    except:
+        _number = number[0]
+
     message = (
         "Hi🙃! Hope you are finding this bot useful,\nif so then spread the word and tell your friends about <a href='https://t.me/feedygram_bot'>🐕Feedygram</a>!!\n"
         + "For more info check the  <a href='https://github.com/Duccioo/Feedygram'>github page.</a>\n"
@@ -67,7 +72,7 @@ def about_message(number):
         + "And if you have any feedback, please reach out to me at meconcelliduccio@gmail.com or visit my website <a href='https://duccio.me/'>duccio.me</a>\n"
         + "<i>🐶Bau Bau🐶</i>"
         + "\n\nThere are currently "
-        + str(number_to_emoji((number[0][0])))
+        + str(number_to_emoji(_number))
         + "active users\n"
     )
     return message
