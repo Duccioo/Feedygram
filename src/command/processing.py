@@ -1,9 +1,8 @@
 # /bin/bash/python/
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 import traceback
 import html
 from telegram import LinkPreviewOptions
-import datetime
 
 # -----
 from utils.datehandler import DateHandler
@@ -49,6 +48,7 @@ class BatchProcess:
             new_entries = self._filter_new_entries(
                 feed_url, entries, last_updated, last_title
             )
+
             if not new_entries:
                 return
 
