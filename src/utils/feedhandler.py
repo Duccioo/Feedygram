@@ -62,9 +62,9 @@ class FeedHandler:
     @staticmethod
     def get_feed_title(url):
         feed = feedparser.parse(url)
-        if feed.feed.title:
+        try:
             return feed.feed.title
-        else:
+        except AttributeError:
             return None
 
     @staticmethod

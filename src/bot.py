@@ -397,6 +397,18 @@ class Feedergraph(object):
             data = query.data
             # data è composto da:  "alias", "url", "user", "number_feed"
             entries = FeedHandler.parse_N_entries(data["url"], data["number_feed"])
+            if entries == None:
+                message = (
+                    bip_bop()
+                    + "mhh... I tried my best for send feeds but I can't...\n"
+                    + data["alias"]
+                    + "\n"
+                )
+                await self.bot.bot.send_message(
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
             for entry in reversed(entries):
                 # print(entry)
                 # controllo in che modalità vuole il link:
