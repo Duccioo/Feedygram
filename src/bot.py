@@ -402,12 +402,10 @@ class Feedergraph(object):
                     bip_bop()
                     + "mhh... I tried my best for send feeds but I can't...\n"
                     + data["alias"]
-                    + "\n"
                 )
                 await self.bot.bot.send_message(
                     text=message,
                     parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
                 )
             for entry in reversed(entries):
                 # print(entry)
