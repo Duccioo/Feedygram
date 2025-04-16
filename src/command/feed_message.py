@@ -1,7 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import webpage2telegraph
 import random
-import json
 import logging
 
 # ---
@@ -36,9 +35,7 @@ async def send_newest_messages(self, url, post, user):
             same_link_count += 1
             if same_link_count >= MAX_SAME_LINK_UPDATES:
                 # Aggiorna il database senza inviare notifiche
-                await self.db_update(
-                    user[0], post.updated, same_link_count=same_link_count
-                )
+                await self.db_update(user[0], post.updated, same_link_count=same_link_count)
                 return
         else:
             same_link_count = 0  # Reset contatore se il link cambia
@@ -64,24 +61,16 @@ async def build_message_data(self, post, user, set_telegraph):
     # Funzione unificata per la costruzione dei messaggi
     if set_telegraph:
         telegraph_link = self.safe_telegraph_transfer(post.link)
-        reply_markup = make_feed_keyboard(
-            "✳️Normal Link✳️", user[7], False, post.link, post.title
-        )
+        reply_markup = make_feed_keyboard("✳️Normal Link✳️", user[7], False, post.link, post.title)
         return {
-            "message": self.format_message(
-                user[7], post.title, telegraph_link, "Normal Link", post.link
-            ),
+            "message": self.format_message(user[7], post.title, telegraph_link, "Normal Link", post.link),
             "reply_markup": reply_markup,
         }
     else:
         telegraph_link = self.safe_telegraph_transfer(post.link)
-        reply_markup = make_feed_keyboard(
-            "🤙Telegraph Link🤙", user[7], True, post.link, post.title
-        )
+        reply_markup = make_feed_keyboard("🤙Telegraph Link🤙", user[7], True, post.link, post.title)
         return {
-            "message": self.format_message(
-                user[7], post.title, post.link, "Telegraph Link", telegraph_link
-            ),
+            "message": self.format_message(user[7], post.title, post.link, "Telegraph Link", telegraph_link),
             "reply_markup": reply_markup,
         }
 
@@ -115,9 +104,7 @@ def make_feed_keyboard(name="", alias="", set_telegraph=False, link="", title=""
         "title": title,
     }
 
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(name, callback_data=callback_data)]]
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=callback_data)]])
 
 
 async def send_check_message(
@@ -217,18 +204,14 @@ async def send_check_message(
 def send_feed(telegraph, alias, post_link, post_title):
     # telegraph mi dice se il link che sto inviando è in versione telegraph o no
     if telegraph:
-        reply_markup = make_feed_keyboard(
-            "✳️Normal Link✳️", alias, False, post_link, post_title
-        )
+        reply_markup = make_feed_keyboard("✳️Normal Link✳️", alias, False, post_link, post_title)
         title_first = post_title
         # title_type = "🤙Telegram Link🤙\n "
         link_first = webpage2telegraph.transfer(post_link)
         # title_second = "Normal Link"
         # link_second = post_link
     else:
-        reply_markup = make_feed_keyboard(
-            "🤙Telegraph Link🤙", alias, True, post_link, post_title
-        )
+        reply_markup = make_feed_keyboard("🤙Telegraph Link🤙", alias, True, post_link, post_title)
 
         # title_type = "✳️Normal Link✳️\n "
         title_first = post_title

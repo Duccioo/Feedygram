@@ -27,17 +27,13 @@ class BatchProcess:
         try:
             feeds = self.db.get_all_feeds()
             for feed_url, last_updated, last_title, alias in feeds:
-                await self._process_single_feed(
-                    feed_url, last_updated, last_title, alias
-                )
+                await self._process_single_feed(feed_url, last_updated, last_title, alias)
 
         except Exception as e:
             print(f"\nErrore durante l'esecuzione del batch: {e}")
             # Implementare logica di ripristino se necessario
 
-    async def _process_single_feed(
-        self, feed_url: str, last_updated, last_title: str, alias: str
-    ) -> None:
+    async def _process_single_feed(self, feed_url: str, last_updated, last_title: str, alias: str) -> None:
         """Elabora un singolo feed"""
         try:
 
@@ -45,9 +41,7 @@ class BatchProcess:
             if entries is None:
                 return
 
-            new_entries = self._filter_new_entries(
-                feed_url, entries, last_updated, last_title
-            )
+            new_entries = self._filter_new_entries(feed_url, entries, last_updated, last_title)
 
             if not new_entries:
                 return
@@ -67,16 +61,12 @@ class BatchProcess:
         new_entries = []
         for entry in entries:
             if entry.title != last_title:
-                if DateHandler.parse_datetime(
-                    entry.updated
-                ) > DateHandler.parse_datetime(last_updated):
+                if DateHandler.parse_datetime(entry.updated) > DateHandler.parse_datetime(last_updated):
                     new_entries.append(entry)
                     self.cache[feed_url] = {"last_title": entry.title, "flag": 0}
 
             elif self.cache[feed_url]["flag"] < 2:
-                if DateHandler.parse_datetime(
-                    entry.updated
-                ) > DateHandler.parse_datetime(last_updated):
+                if DateHandler.parse_datetime(entry.updated) > DateHandler.parse_datetime(last_updated):
                     new_entries.append(entry)
                     self.cache[feed_url]["flag"] += 1
 
@@ -131,9 +121,7 @@ class BatchProcess:
                         parse_mode="HTML",
                     )
 
-    async def _send_entry_to_user(
-        self, user_id: int, entry, alias: str, use_telegraph: bool
-    ) -> None:
+    async def _send_entry_to_user(self, user_id: int, entry, alias: str, use_telegraph: bool) -> None:
         """Invia un singolo entry a un utente"""
         safe_title = html.escape(entry.title)
         safe_link = html.escape(entry.link)
@@ -155,7 +143,7 @@ class BatchProcess:
             )
         except RetryAfter as e:
             print(f"Rate limit per {user_id}: {e}")
-            await asyncio.sleep(e.retry_after)
+            # await asyncio.sleep(e.retry_after)
             await self._send_entry_to_user(user_id, entry, alias, use_telegraph)
         except TelegramError as e:
             if "chat not found" in str(e).lower():
