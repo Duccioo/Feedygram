@@ -296,7 +296,7 @@ class Feedergraph(object):
         # Check if entry does not exists
         entries = self.db.get_urls_for_user(telegram_id=telegram_user.id)
 
-        if any(arg_url.lower() in entry for entry in entries):
+        if any(arg_url in entry for entry in entries):
             message = (
                 "Sorry, "
                 + telegram_user.first_name
@@ -357,7 +357,7 @@ class Feedergraph(object):
             return
 
         self.db.add_user_bookmark(
-            telegram_id=telegram_user.id, url=arg_url.lower(), alias=arg_entry
+            telegram_id=telegram_user.id, url=arg_url, alias=arg_entry
         )
         keyboard = [
             [
@@ -366,7 +366,7 @@ class Feedergraph(object):
                     callback_data={
                         "option": "change_database",
                         "alias": arg_entry,
-                        "url": arg_url.lower(),
+                        "url": arg_url,
                         "set_telegraph": False,
                     },
                 )
