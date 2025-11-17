@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS web (
     url TEXT PRIMARY KEY,
     last_title TEXT NOT NULL,
     last_updated TIMESTAMP NOT NULL,
+    last_entry_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
