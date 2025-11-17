@@ -92,6 +92,20 @@ class FeedHandler:
             string = "http://" + string
         return string
 
+    @staticmethod
+    def get_entry_id(entry) -> str:
+        """
+        Restituisce un identificatore univoco per un entry del feed.
+        """
+        if hasattr(entry, 'id') and entry.id:
+            return entry.id
+        if hasattr(entry, 'link') and entry.link:
+            return entry.link
+        # Fallback se mancano sia id che link
+        title = getattr(entry, 'title', '')
+        updated = getattr(entry, 'updated', '')
+        return f"{title}-{updated}"
+
 
 if __name__ == "__main__":
 
