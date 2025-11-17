@@ -55,10 +55,10 @@ class DatabaseHandler:
         """Restituisce una connessione al database"""
         return sqlite3.connect(self.database_path, check_same_thread=False)
 
-    def get_all_feeds(self) -> List[Tuple[str, datetime, str]]:
-        """Restituisce tutti i feed attivi con ultimo aggiornamento e alias principale"""
+    def get_all_feeds(self) -> List[Tuple[str, datetime, str, Optional[str]]]:
+        """Restituisce tutti i feed attivi con metadati completi"""
         query = """
-            SELECT w.url, w.last_updated,w.last_title, MIN(wu.alias)
+            SELECT w.url, w.last_updated, w.last_title, w.last_entry_id, MIN(wu.alias)
             FROM web w
             JOIN web_user wu ON w.url = wu.url
             GROUP BY w.url
@@ -79,12 +79,12 @@ class DatabaseHandler:
             cursor = conn.execute(query, (url,))
             return [(row[0], bool(row[1])) for row in cursor.fetchall()]
 
-    def update_feed(self, url: str, last_updated: datetime, last_title: str) -> None:
-        """Aggiorna i metadati di un feed"""
+    def update_feed(self, url: str, last_updated: datetime, last_title: str, last_entry_id: str) -> None:
+        """Aggiorna i metadati di un feed, incluso l'ID dell'ultimo entry."""
         with self._get_connection() as conn:
             conn.execute(
-                "UPDATE web SET last_updated = ?, last_title = ? WHERE url = ?",
-                (last_updated, last_title, url),
+                "UPDATE web SET last_updated = ?, last_title = ?, last_entry_id = ? WHERE url = ?",
+                (last_updated, last_title, last_entry_id, url),
             )
 
     # Metodi per la gestione degli utenti
@@ -168,11 +168,11 @@ class DatabaseHandler:
             raise ValueError("URL non valido")
 
         query = """
-            INSERT INTO web (url, last_title, last_updated)
-            VALUES (?, ?, ?)
+            INSERT INTO web (url, last_title, last_updated, last_entry_id)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT(url) DO NOTHING
         """
-        params = (url, "", dh.parse_datetime("01-05-1999"))
+        params = (url, "", dh.parse_datetime("01-05-1999"), None)
 
         with self._get_connection() as conn:
             conn.execute(query, params)

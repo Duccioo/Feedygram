@@ -85,6 +85,20 @@ class FeedHandler:
             string = "http://" + string
         return string
 
+    @staticmethod
+    def get_entry_id(entry) -> str:
+        """
+        Restituisce un identificatore univoco per un entry del feed.
+        """
+        if hasattr(entry, 'id') and entry.id:
+            return entry.id
+        if hasattr(entry, 'link') and entry.link:
+            return entry.link
+        # Fallback se mancano sia id che link
+        title = getattr(entry, 'title', '')
+        updated = getattr(entry, 'updated', '')
+        return f"{title}-{updated}"
+
 
 if __name__ == "__main__":
 
@@ -108,7 +122,7 @@ if __name__ == "__main__":
             " in data-->",
             item.entries[0].updated,
         )
-        print(
-            "telegraph",
-            webpage2telegraph.transfer("https://www.behance.net/gallery/150667351/Acid-Summer-Portraits"),
-        )
+        # print(
+        #     "telegraph",
+        #     webpage2telegraph.transfer("https://www.behance.net/gallery/150667351/Acid-Summer-Portraits"),
+        # )
