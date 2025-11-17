@@ -26,62 +26,49 @@ class BatchProcess:
 
         try:
             feeds = self.db.get_all_feeds()
-            for feed_url, last_updated, last_title, alias in feeds:
-                await self._process_single_feed(feed_url, last_updated, last_title, alias)
+            for feed_url, last_updated, last_title, last_entry_id, alias in feeds:
+                await self._process_single_feed(feed_url, last_updated, last_title, last_entry_id, alias)
 
         except Exception as e:
-            print(f"\nErrore durante l'esecuzione del batch: {e}")
+            print(f"Errore durante l'esecuzione del batch: {e}")
             # Implementare logica di ripristino se necessario
 
-    async def _process_single_feed(self, feed_url: str, last_updated, last_title: str, alias: str) -> None:
+    async def _process_single_feed(self, feed_url: str, last_updated, last_title: str, last_entry_id: str, alias: str) -> None:
         """Elabora un singolo feed"""
         try:
-
             entries = await self._safe_fetch_entries(feed_url)
-            if entries is None:
+            if not entries:
                 return
 
-            new_entries = self._filter_new_entries(feed_url, entries, last_updated, last_title)
+            new_entries = self._filter_new_entries(entries, last_entry_id)
 
             if not new_entries:
                 return
 
             await self._notify_users(feed_url, new_entries, alias)
-            self._update_feed_metadata(feed_url, new_entries[0])
+            latest_entry = new_entries[0]
+            self._update_feed_metadata(feed_url, latest_entry)
 
         except Exception as e:
-            print(f"Errore elaborazione feed {feed_url}: {e}")
+            print(f"Errore durante l'elaborazione del feed {feed_url}: {e}")
+            traceback.print_exc()
 
-    def _filter_new_entries(self, feed_url, entries, last_updated, last_title):
-        """Filtra solo i nuovi entry"""
+    def _filter_new_entries(self, entries, last_entry_id: str):
+        """
+        Filtra gli articoli non ancora elaborati basandosi sull'ID univoco (guid).
+        """
+        if not last_entry_id:
+            # Se non abbiamo un ID di riferimento, consideriamo solo l'articolo più recente per evitare di inviare l'intero feed
+            return entries[:1]
 
-        if feed_url not in self.cache:
-            self.cache[feed_url] = {"last_title": last_title, "flag": 0}
-
-        new_entries = []
-        for entry in entries:
-            if entry.title != last_title:
-                if DateHandler.parse_datetime(entry.updated) > DateHandler.parse_datetime(last_updated):
-                    new_entries.append(entry)
-                    self.cache[feed_url] = {"last_title": entry.title, "flag": 0}
-
-            elif self.cache[feed_url]["flag"] < 2:
-                if DateHandler.parse_datetime(entry.updated) > DateHandler.parse_datetime(last_updated):
-                    new_entries.append(entry)
-                    self.cache[feed_url]["flag"] += 1
-
-        # new_entries = [
-        #     entry
-        #     for entry in entries
-        #     if entry.title != last_title
-        #     and DateHandler.parse_datetime(entry.updated)
-        #     > DateHandler.parse_datetime(last_updated)
-        # ]
-
-        # Ordina i nuovi entry per data di pubblicazione (in modo decrescente)
-        new_entries.sort(key=lambda x: x.updated, reverse=True)
-
-        return new_entries
+        try:
+            # Trova l'indice dell'ultimo articolo che abbiamo inviato
+            last_index = next(i for i, entry in enumerate(entries) if hasattr(entry, 'id') and entry.id == last_entry_id)
+            # Restituisce tutti gli articoli più recenti di quello
+            return entries[:last_index]
+        except StopIteration:
+            # Se il vecchio ID non è più nel feed, inviamo solo l'articolo più recente per sicurezza
+            return entries[:1]
 
     async def _safe_fetch_entries(self, feed_url: str):
         """Fetch degli entry con gestione errori"""
@@ -151,11 +138,18 @@ class BatchProcess:
                 self.db.deactivate_user(user_id)
 
     def _update_feed_metadata(self, feed_url: str, latest_entry) -> None:
-        """Aggiorna i metadati del feed"""
+        """Aggiorna i metadati del feed, incluso l'ID dell'ultimo entry."""
+        new_last_entry_id = getattr(latest_entry, 'id', None)
+        if not new_last_entry_id:
+            print(f"Attenzione: ID non trovato per l'ultimo entry del feed {feed_url}. La deduplicazione potrebbe non funzionare.")
+            # Fallback a un valore non nullo per evitare di riprocessare all'infinito
+            new_last_entry_id = latest_entry.link
+
         self.db.update_feed(
             url=feed_url,
             last_updated=DateHandler.parse_datetime(latest_entry.updated),
             last_title=html.escape(latest_entry.title),
+            last_entry_id=new_last_entry_id
         )
 
     @property

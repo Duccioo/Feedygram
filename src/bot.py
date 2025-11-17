@@ -273,24 +273,14 @@ class Feedergraph(object):
         arg_url = FeedHandler.format_url_string(string=args[1])
 
         # Check if argument matches url format
-        is_parsable = FeedHandler.is_parsable(url=arg_url)
-        if is_parsable != True:
-            message = (
-                bip_bop()
-                + "Sorry! It seems like <code>"
-                + str(arg_url)
-                + "</code> "
-                + str(is_parsable)
-                + "...😣.\n Have you tried other URLs?\n"
-                + "Try to send a valid URL like this:\n"
-                + "<code>/add https://duccio.me/rss  \t"
-                + random.choice(list)
-                + "</code>"
+        is_parsable, error_message = FeedHandler.is_parsable(url=arg_url)
+        if not is_parsable:
+            user_friendly_message = (
+                f"{bip_bop()}Sorry! The URL <code>{arg_url}</code> is not a valid feed.\n"
+                f"<b>Reason:</b> {error_message}\n\n"
+                "Please try another URL."
             )
-            await update.message.reply_text(
-                message,
-                parse_mode="HTML",
-            )
+            await update.message.reply_text(user_friendly_message, parse_mode="HTML")
             return
 
         # Check if entry does not exists
