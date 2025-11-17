@@ -50,21 +50,28 @@ class FeedHandler:
             return None
 
     @staticmethod
-    def is_parsable(url):
+    def is_parsable(url: str) -> tuple[bool, str | None]:
         """
-        Checks wether the given url provides a news feed. Return True if news are available, else False
+        Verifica se l'URL fornito è un feed RSS analizzabile.
+
+        Restituisce una tupla: (True/False, messaggio_di_errore_o_None).
         """
         feed = feedparser.parse(url)
 
         if feed.bozo:
-            print(f"Attenzione: Il feed potrebbe contenere errori: {feed.bozo_exception}")
+            error_message = f"Errore nel parsing del feed: {feed.bozo_exception}"
+            print(error_message)
+            return False, error_message
 
-        if feed.entries:
-            for post in feed.entries:
-                if hasattr(post, "updated"):
-                    return True
-            return "does not present date on the articles"
-        return "does not even have articles"
+        if not feed.entries:
+            return False, "Il feed non contiene articoli (entries)."
+
+        # Opzionale: verifica la presenza di campi essenziali
+        for entry in feed.entries:
+            if not hasattr(entry, 'title') or not hasattr(entry, 'link'):
+                return False, "Alcuni articoli nel feed non hanno titolo o link."
+
+        return True, None
 
     @staticmethod
     def get_feed_title(url):

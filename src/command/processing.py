@@ -31,7 +31,7 @@ class BatchProcess:
 
         except Exception as e:
             print(f"Errore durante l'esecuzione del batch: {e}")
-            traceback.print_exc()
+            # Implementare logica di ripristino se necessario
 
     async def _process_single_feed(self, feed_url: str, last_updated, last_title: str, last_entry_id: str, alias: str) -> None:
         """Elabora un singolo feed"""
@@ -46,7 +46,8 @@ class BatchProcess:
                 return
 
             await self._notify_users(feed_url, new_entries, alias)
-            self._update_feed_metadata(feed_url, new_entries[0])
+            latest_entry = new_entries[0]
+            self._update_feed_metadata(feed_url, latest_entry)
 
         except Exception as e:
             print(f"Errore durante l'elaborazione del feed {feed_url}: {e}")
@@ -54,21 +55,20 @@ class BatchProcess:
 
     def _filter_new_entries(self, entries, last_entry_id: str):
         """
-        Filtra gli articoli non ancora elaborati basandosi sull'ID univoco.
+        Filtra gli articoli non ancora elaborati basandosi sull'ID univoco (guid).
         """
         if not last_entry_id:
-            # Per i nuovi feed, invia solo l'articolo più recente per evitare di inondare l'utente
-            return entries[:1] if entries else []
+            # Se non abbiamo un ID di riferimento, consideriamo solo l'articolo più recente per evitare di inviare l'intero feed
+            return entries[:1]
 
         try:
             # Trova l'indice dell'ultimo articolo che abbiamo inviato
-            last_index = next(i for i, entry in enumerate(entries) if FeedHandler.get_entry_id(entry) == last_entry_id)
+            last_index = next(i for i, entry in enumerate(entries) if hasattr(entry, 'id') and entry.id == last_entry_id)
             # Restituisce tutti gli articoli più recenti di quello
             return entries[:last_index]
         except StopIteration:
-            # Se il vecchio ID non è più nel feed, significa che sono tutti nuovi.
-            # Invia tutti gli articoli per non perderne nessuno.
-            return entries
+            # Se il vecchio ID non è più nel feed, inviamo solo l'articolo più recente per sicurezza
+            return entries[:1]
 
     async def _safe_fetch_entries(self, feed_url: str):
         """Fetch degli entry con gestione errori"""
@@ -139,7 +139,12 @@ class BatchProcess:
 
     def _update_feed_metadata(self, feed_url: str, latest_entry) -> None:
         """Aggiorna i metadati del feed, incluso l'ID dell'ultimo entry."""
-        new_last_entry_id = FeedHandler.get_entry_id(latest_entry)
+        new_last_entry_id = getattr(latest_entry, 'id', None)
+        if not new_last_entry_id:
+            print(f"Attenzione: ID non trovato per l'ultimo entry del feed {feed_url}. La deduplicazione potrebbe non funzionare.")
+            # Fallback a un valore non nullo per evitare di riprocessare all'infinito
+            new_last_entry_id = latest_entry.link
+
         self.db.update_feed(
             url=feed_url,
             last_updated=DateHandler.parse_datetime(latest_entry.updated),
