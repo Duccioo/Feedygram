@@ -1,5 +1,7 @@
 import feedparser
 import webpage2telegraph
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 
 class FeedHandler:
@@ -105,6 +107,43 @@ class FeedHandler:
         title = getattr(entry, 'title', '')
         updated = getattr(entry, 'updated', '')
         return f"{title}-{updated}"
+
+    @staticmethod
+    def extract_source_link(entry) -> str | None:
+        """
+        Tenta di estrarre un link alla fonte originale dalla descrizione/summary dell'entry,
+        utile per feed aggregatori come Kagi che usano link proxy.
+        """
+        description = getattr(entry, 'summary', '') or getattr(entry, 'description', '')
+        if not description:
+            return None
+
+        try:
+            soup = BeautifulSoup(description, 'html.parser')
+            # Trova tutti i link nella descrizione
+            links = soup.find_all('a', href=True)
+
+            for link in links:
+                href = link['href']
+                parsed_url = urlparse(href)
+
+                # Filtra link interni o non rilevanti (adattare in base alle necessità)
+                if not parsed_url.netloc:
+                    continue
+
+                # Ignora link che puntano a Kagi stesso (dominio del feed proxy)
+                if "kagi.com" in parsed_url.netloc:
+                    continue
+
+                # Se troviamo un link valido che non è Kagi, lo consideriamo la fonte
+                # Spesso aggregatori mettono la fonte in un link testuale come (The Guardian)
+                return href
+
+        except Exception as e:
+            print(f"Error extracting source link: {e}")
+            return None
+
+        return None
 
 
 if __name__ == "__main__":
