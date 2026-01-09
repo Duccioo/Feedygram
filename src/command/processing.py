@@ -111,7 +111,10 @@ class BatchProcess:
     async def _send_entry_to_user(self, user_id: int, entry, alias: str, use_telegraph: bool) -> None:
         """Invia un singolo entry a un utente"""
         safe_title = html.escape(entry.title)
-        safe_link = html.escape(entry.link)
+
+        # Try to extract a direct source link to avoid proxy/preview issues
+        source_link = FeedHandler.extract_source_link(entry)
+        safe_link = html.escape(source_link if source_link else entry.link)
 
         message, keyboard = feed_message.send_feed(
             telegraph=use_telegraph,
