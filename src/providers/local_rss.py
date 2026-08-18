@@ -7,7 +7,7 @@ from .models import FeedItem
 
 class LocalRSSProvider(BaseFeedProvider):
     """
-    Provider predefinito basato su feedparser locale.
+    Default provider based on local feedparser.
     """
 
     def validate_feed(self, target: str) -> Tuple[bool, Optional[str]]:
@@ -33,7 +33,7 @@ class LocalRSSProvider(BaseFeedProvider):
 
             summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
 
-            # Estrazione categorie / tag nativi dal feed
+            # Extraction of native categories / tags from feed
             raw_tags = getattr(entry, "tags", None) or getattr(entry, "categories", None)
             extracted_tags: List[str] = []
             if raw_tags:
@@ -54,3 +54,4 @@ class LocalRSSProvider(BaseFeedProvider):
                 )
             )
         return items
+

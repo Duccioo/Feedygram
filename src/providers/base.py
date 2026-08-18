@@ -5,20 +5,21 @@ from .models import FeedItem
 
 class BaseFeedProvider(ABC):
     """
-    Interfaccia comune per i provider di feed RSS/Atom o motori esterni (es. Lion Reader, REST API).
+    Common interface for RSS/Atom feed providers or external feed engines (e.g. Lion Reader, REST API).
     """
 
     @abstractmethod
     def validate_feed(self, target: str) -> Tuple[bool, Optional[str]]:
-        """Verifica se l'URL o l'identificatore del feed è valido e raggiungibile."""
+        """Verifies if feed URL or identifier is valid and reachable."""
         pass
 
     @abstractmethod
     def get_feed_title(self, target: str) -> Optional[str]:
-        """Recupera il titolo del feed."""
+        """Retrieves the feed title."""
         pass
 
     @abstractmethod
     def fetch_entries(self, target: str, limit: int = 0) -> List[FeedItem]:
-        """Recupera gli articoli per il target specificato."""
+        """Fetches feed entries for the specified target."""
         pass
+

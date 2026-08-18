@@ -26,7 +26,7 @@ PRESETS_DATA: Dict[str, List[Dict[str, str]]] = {
 
 
 def make_categories_keyboard() -> InlineKeyboardMarkup:
-    """Genera la tastiera per selezionare una categoria di preset."""
+    """Generates the keyboard for selecting a preset category."""
     keyboard = []
     for cat in PRESETS_DATA.keys():
         keyboard.append([
@@ -39,15 +39,15 @@ def make_categories_keyboard() -> InlineKeyboardMarkup:
 
 
 def make_category_feeds_keyboard(category: str) -> Tuple[str, InlineKeyboardMarkup]:
-    """Genera il messaggio e i bottoni di iscrizione per una specifica categoria."""
+    """Generates the message and subscription buttons for a specific category."""
     feeds = PRESETS_DATA.get(category, [])
     if not feeds:
-        return "Nessun feed trovato in questa categoria.", make_categories_keyboard()
+        return "No feeds found in this category.", make_categories_keyboard()
 
     safe_cat = html.escape(category)
     message = (
         f"<b>{safe_cat}</b>\n\n"
-        "Tocca un feed per aggiungerlo istantaneamente alle tue sottoscrizioni:"
+        "Tap a feed to instantly add it to your subscriptions:"
     )
 
     keyboard = []
@@ -65,9 +65,10 @@ def make_category_feeds_keyboard(category: str) -> Tuple[str, InlineKeyboardMark
         ])
     keyboard.append([
         InlineKeyboardButton(
-            "🔙 Torna alle Categorie",
+            "🔙 Back to Categories",
             callback_data={"option": "explore_categories"}
         )
     ])
 
     return message, InlineKeyboardMarkup(keyboard)
+

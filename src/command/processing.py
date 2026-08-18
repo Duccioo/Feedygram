@@ -29,7 +29,7 @@ class BatchProcess:
         self._is_running = True
 
     async def run(self, context=None) -> None:
-        """Esegue il polling concorrente di tutti i feed con un semaforo limitatore"""
+        """Runs concurrent polling for all feeds with a rate-limiting semaphore"""
         if not self._is_running:
             return
 
@@ -52,13 +52,13 @@ class BatchProcess:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
-            logger.error(f"Errore durante l'esecuzione del batch: {e}")
+            logger.error(f"Error during batch execution: {e}")
             traceback.print_exc()
 
     async def _process_single_feed(
         self, feed_url: str, last_updated, last_title: str, last_entry_id: Optional[str]
     ) -> None:
-        """Elabora un singolo feed"""
+        """Processes a single feed"""
         try:
             entries = await self._safe_fetch_entries(feed_url)
             if not entries:
@@ -74,40 +74,40 @@ class BatchProcess:
             self._update_feed_metadata(feed_url, latest_entry)
 
         except Exception as e:
-            logger.error(f"Errore durante l'elaborazione del feed {feed_url}: {e}")
+            logger.error(f"Error processing feed {feed_url}: {e}")
             traceback.print_exc()
 
     def _filter_new_entries(self, entries: List[FeedItem], last_entry_id: Optional[str]) -> List[FeedItem]:
         """
-        Filtra gli articoli non ancora elaborati basandosi sull'ID univoco calcolato.
+        Filters unread articles based on unique entry ID.
         """
         if not last_entry_id:
-            # Primo avvio o nessun ID salvato: consideriamo solo l'articolo più recente per evitare flood
+            # First run or no ID saved: only consider the most recent article to prevent spam flood
             return entries[:1]
 
         for i, entry in enumerate(entries):
             if str(entry.id) == str(last_entry_id):
-                # Restituisce tutti gli articoli più recenti di quello già elaborato
+                # Returns all articles newer than the previously processed one
                 return entries[:i]
 
-        # Se il vecchio ID non è più presente nella finestra del feed, prendiamo solo l'articolo più recente
+        # If previous ID is no longer in the feed window, take only the most recent article
         return entries[:1]
 
     async def _safe_fetch_entries(self, feed_url: str) -> Optional[List[FeedItem]]:
-        """Fetch degli entry con gestione errori tramite il feed provider"""
+        """Fetches entries with error handling via the feed provider"""
         try:
             return self.provider.fetch_entries(feed_url, limit=0)
         except Exception as e:
-            logger.warning(f"Errore fetch entries per {feed_url}: {e}")
+            logger.warning(f"Error fetching entries for {feed_url}: {e}")
             return None
 
     async def _notify_users(self, feed_url: str, entries: List[FeedItem]) -> None:
-        """Notifica gli utenti iscritti con il loro alias e preferenza"""
+        """Notifies subscribed users with their alias and preference"""
         users = self.db.get_active_users_for_feed(feed_url)
         if not users:
             return
 
-        logger.info(f"Invio {len(entries)} nuovi entry a {len(users)} utenti per {feed_url}")
+        logger.info(f"Sending {len(entries)} new entries to {len(users)} users for {feed_url}")
 
         for entry in reversed(entries):
             for user_id, prefers_telegraph, user_alias, filter_rules in users:
@@ -121,13 +121,13 @@ class BatchProcess:
                         use_telegraph=prefers_telegraph,
                     )
                 except Exception as e:
-                    logger.error(f"Errore invio a {user_id}: {e}")
+                    logger.error(f"Error sending to {user_id}: {e}")
                     traceback.print_exc()
 
     async def _send_entry_to_user(
         self, user_id: int, entry: FeedItem, alias: str, use_telegraph: bool
     ) -> None:
-        """Invia un singolo entry a un utente"""
+        """Sends a single entry to a user"""
         post_link = entry.source_link or entry.link
         post_title = entry.title or "No Title"
 
@@ -148,7 +148,7 @@ class BatchProcess:
                 link_preview_options=LinkPreviewOptions(prefer_small_media=True),
             )
         except RetryAfter as e:
-            logger.warning(f"Rate limit per {user_id}: attesa {e.retry_after}s")
+            logger.warning(f"Rate limit for {user_id}: waiting {e.retry_after}s")
             await asyncio.sleep(e.retry_after)
             await self.bot.bot.send_message(
                 chat_id=user_id,
@@ -160,19 +160,20 @@ class BatchProcess:
         except TelegramError as e:
             err_msg = str(e).lower()
             if "chat not found" in err_msg or "bot was blocked" in err_msg or "user is deactivated" in err_msg:
-                logger.info(f"Disattivazione utente {user_id} per errore: {e}")
+                logger.info(f"Deactivating user {user_id} due to error: {e}")
                 self.db.deactivate_user(user_id)
             else:
-                logger.error(f"Errore Telegram non fatale per {user_id}: {e}")
+                logger.error(f"Non-fatal Telegram error for {user_id}: {e}")
 
     def _update_feed_metadata(self, feed_url: str, latest_entry: FeedItem) -> None:
-        """Aggiorna i metadati del feed, incluso l'ID univoco dell'ultimo entry."""
+        """Updates feed metadata, including latest entry ID."""
         self.db.update_feed(
             url=feed_url,
             last_updated=str(latest_entry.published) if latest_entry.published else None,
             last_title=latest_entry.title or "No Title",
             last_entry_id=str(latest_entry.id),
         )
+
 
     @property
     def is_running(self) -> bool:

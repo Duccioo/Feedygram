@@ -39,7 +39,8 @@ class TestPresets(unittest.TestCase):
 
     def test_unknown_category(self):
         msg, kb = make_category_feeds_keyboard("Unknown Category")
-        self.assertIn("Nessun feed trovato", msg)
+        self.assertIn("No feeds found", msg)
+
 
 
 if __name__ == "__main__":

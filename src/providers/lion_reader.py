@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class LionReaderProvider(BaseFeedProvider):
     """
-    Provider per estrarre articoli e feed da un'istanza Lion Reader (o API REST compatibile).
-    Supporta autenticazione con API Key/Bearer Token e mapping automatico delle risposte JSON.
+    Provider to fetch articles and feeds from a Lion Reader instance (or compatible REST API).
+    Supports API Key / Bearer Token authentication and automatic JSON response mapping.
     """
 
     def __init__(self, base_url: str, api_token: Optional[str] = None, timeout: int = 10):
@@ -30,7 +30,7 @@ class LionReaderProvider(BaseFeedProvider):
 
     def validate_feed(self, target: str) -> Tuple[bool, Optional[str]]:
         """
-        Verifica se il feed è presente o valido nell'API.
+        Checks if feed exists or is valid in the API.
         """
         try:
             # ponytail: probe entries endpoint first to verify connection and feed presence
@@ -39,7 +39,7 @@ class LionReaderProvider(BaseFeedProvider):
             resp = requests.get(url, headers=self._get_headers(), params=params, timeout=self.timeout)
             
             if resp.status_code == 404:
-                # Prova endpoint alternativo generico
+                # Try generic alternative endpoint
                 url = f"{self.base_url}/api/entries"
                 resp = requests.get(url, headers=self._get_headers(), params=params, timeout=self.timeout)
 
@@ -47,11 +47,11 @@ class LionReaderProvider(BaseFeedProvider):
                 return True, None
             return False, f"API error ({resp.status_code}): {resp.text[:100]}"
         except Exception as e:
-            return False, f"Impossibile raggiungere Lion Reader API: {e}"
+            return False, f"Unable to reach Lion Reader API: {e}"
 
     def get_feed_title(self, target: str) -> Optional[str]:
         """
-        Recupera il titolo del feed dall'API.
+        Retrieves feed title from API.
         """
         try:
             url = f"{self.base_url}/api/v1/feeds"
@@ -64,15 +64,15 @@ class LionReaderProvider(BaseFeedProvider):
                         if feed.get("url") == target or str(feed.get("id")) == str(target):
                             return feed.get("title") or feed.get("name")
         except Exception as e:
-            logger.debug(f"Errore recupero titolo feed da API: {e}")
+            logger.debug(f"Error retrieving feed title from API: {e}")
         return None
 
     def fetch_entries(self, target: str, limit: int = 0) -> List[FeedItem]:
         """
-        Recupera gli articoli da Lion Reader API.
+        Retrieves articles from Lion Reader API.
         """
         try:
-            # Prova prima endpoint tRPC / v1 di Lion Reader
+            # Try tRPC / v1 endpoint first
             url = f"{self.base_url}/api/v1/entries"
             params: Dict[str, Any] = {"feed": target}
             if limit > 0:
@@ -80,12 +80,12 @@ class LionReaderProvider(BaseFeedProvider):
 
             resp = requests.get(url, headers=self._get_headers(), params=params, timeout=self.timeout)
             if resp.status_code != 200:
-                # Fallback endpoint generico REST
+                # Fallback generic REST endpoint
                 url = f"{self.base_url}/api/entries"
                 resp = requests.get(url, headers=self._get_headers(), params=params, timeout=self.timeout)
 
             if resp.status_code != 200:
-                logger.warning(f"Errore risposta API ({resp.status_code}) per {target}")
+                logger.warning(f"API response error ({resp.status_code}) for {target}")
                 return []
 
             data = resp.json()
@@ -124,5 +124,6 @@ class LionReaderProvider(BaseFeedProvider):
             return items
 
         except Exception as e:
-            logger.error(f"Errore fetch_entries da Lion Reader API per {target}: {e}")
+            logger.error(f"Error fetch_entries from Lion Reader API for {target}: {e}")
             return []
+

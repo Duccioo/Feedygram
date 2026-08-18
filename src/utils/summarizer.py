@@ -7,7 +7,7 @@ from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
-# Parole di stop comuni (IT / EN) per l'algoritmo di summarization estrattiva
+# Common stop words (IT / EN) for extractive summarization algorithm
 STOP_WORDS = {
     "the", "and", "is", "in", "to", "of", "it", "that", "you", "for", "on", "with", "as",
     "this", "by", "are", "be", "from", "at", "or", "an", "was", "we", "will", "an",
@@ -19,7 +19,7 @@ STOP_WORDS = {
 
 def _extract_article_text(url: str, fallback_text: str = "") -> str:
     """
-    Estrae il testo pulito dell'articolo usando Trafilatura o Jina Reader (entrambi gratuiti).
+    Extracts clean article text using Trafilatura or Jina Reader (both free).
     """
     try:
         import trafilatura
@@ -46,7 +46,7 @@ def _extract_article_text(url: str, fallback_text: str = "") -> str:
 
 
 def _clean_text(raw: str) -> str:
-    """Rimuove tag HTML residui e normalizza whitespace per la sintesi."""
+    """Removes leftover HTML tags and normalizes whitespace for summarization."""
     if not raw:
         return ""
     text = re.sub(r"<[^>]+>", " ", raw)
@@ -56,11 +56,11 @@ def _clean_text(raw: str) -> str:
 
 def _extractive_summarize(text: str, max_sentences: int = 3) -> str:
     """
-    Algoritmo estrattivo puro (0 RAM, 0ms, 100% offline):
-    Calcola la frequenza delle parole chiave e seleziona le 3 frasi più informative.
+    Pure extractive algorithm (0 RAM, 0ms, 100% offline):
+    Calculates keyword frequencies and picks the top 3 most informative sentences.
     """
     cleaned = _clean_text(text)
-    # Divide il testo in frasi
+    # Split text into sentences
     raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned)
     sentences = [s.strip() for s in raw_sentences if len(s.strip()) > 30 and not s.startswith("http")]
 
@@ -70,24 +70,24 @@ def _extractive_summarize(text: str, max_sentences: int = 3) -> str:
     if len(sentences) <= max_sentences:
         return "\n".join(f"• {s}" for s in sentences)
 
-    # Calcola frequenza parole
+    # Calculate word frequency
     words = re.findall(r"\b[A-Za-zÀ-ÿ]{3,}\b", text.lower())
     freq = {}
     for w in words:
         if w not in STOP_WORDS:
             freq[w] = freq.get(w, 0) + 1
 
-    # Assegna punteggio a ciascuna frase (con bonus per le prime frasi dell'articolo)
+    # Score each sentence (with positional bonus for opening paragraphs)
     scores = []
     for idx, sentence in enumerate(sentences):
         s_words = re.findall(r"\b[A-Za-zÀ-ÿ]{3,}\b", sentence.lower())
         score = sum(freq.get(w, 0) for w in s_words)
-        # Position bias: i primi paragrafi contengono le informazioni più importanti
+        # Position bias: introductory paragraphs usually contain the key points
         if idx < 3:
             score *= 1.3
         scores.append((score, idx, sentence))
 
-    # Ordina per punteggio decrescente e prendi le prime N
+    # Sort by descending score and take top N
     scores.sort(key=lambda x: x[0], reverse=True)
     top_sentences = sorted(scores[:max_sentences], key=lambda x: x[1])
 
@@ -96,7 +96,7 @@ def _extractive_summarize(text: str, max_sentences: int = 3) -> str:
 
 def summarize_article(url: str, title: str = "", summary_text: str = "") -> str:
     """
-    Genera un TL;DR conciso per un articolo senza costi o pesanti modelli locali.
+    Generates a concise TL;DR for an article without extra cost or heavy local ML models.
     """
     content = _extract_article_text(url, fallback_text=summary_text or title)
     if not content or len(content.strip()) < 40:
@@ -104,3 +104,4 @@ def summarize_article(url: str, title: str = "", summary_text: str = "") -> str:
 
     tldr = _extractive_summarize(content, max_sentences=3)
     return tldr
+

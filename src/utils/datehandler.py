@@ -22,14 +22,15 @@ class DateHandler:
 
     @staticmethod
     def get_datetime_now() -> datetime.datetime:
-        """Restituisce il datetime corrente nel timezone Europe/Rome."""
+        """Returns current datetime in Europe/Rome timezone."""
         return datetime.datetime.now(DateHandler.TIMEZONE)
 
     @staticmethod
     def parse_datetime(date_val: Optional[Union[str, datetime.datetime, Any]] = None) -> datetime.datetime:
-        """Parsa una stringa, struct_time o datetime in un datetime object con timezone Europe/Rome, con fallback sicuro."""
+        """Parses a string, struct_time, or datetime object into a timezone-aware datetime with Europe/Rome timezone and safe fallback."""
         if date_val is None or (isinstance(date_val, str) and not date_val.strip()):
             return DateHandler.get_datetime_now()
+
 
         if isinstance(date_val, datetime.datetime):
             parsed_datetime = date_val

@@ -6,8 +6,8 @@ from typing import List, Tuple
 
 def export_opml(feeds: List[Tuple[str, str, ...]]) -> io.BytesIO:
     """
-    Genera un file OPML 2.0 a partire dalla lista dei feed dell'utente.
-    Ogni elemento contiene almeno (url, alias, ...).
+    Generates an OPML 2.0 file from user subscriptions.
+    Each item contains at least (url, alias, ...).
     """
     root = ET.Element("opml", version="2.0")
     head = ET.SubElement(root, "head")
@@ -36,7 +36,7 @@ def export_opml(feeds: List[Tuple[str, str, ...]]) -> io.BytesIO:
 
 def parse_opml(content: str | bytes) -> List[Tuple[str, str]]:
     """
-    Parsa un file OPML ed estrae la lista di tuple (url, title).
+    Parses an OPML file and extracts a list of (url, title) tuples.
     """
     if isinstance(content, str):
         content = content.strip().encode("utf-8")
@@ -44,7 +44,7 @@ def parse_opml(content: str | bytes) -> List[Tuple[str, str]]:
     feeds: List[Tuple[str, str]] = []
     try:
         root = ET.fromstring(content)
-        # Cerca tutti gli elementi outline che contengono xmlUrl o url
+        # Search all outline elements containing xmlUrl or url
         for outline in root.iter("outline"):
             xml_url = (
                 outline.get("xmlUrl")
@@ -57,6 +57,7 @@ def parse_opml(content: str | bytes) -> List[Tuple[str, str]]:
                 title = outline.get("title") or outline.get("text") or url
                 feeds.append((url, title.strip()))
     except Exception as e:
-        raise ValueError(f"Formato OPML non valido: {e}")
+        raise ValueError(f"Invalid OPML format: {e}")
 
     return feeds
+

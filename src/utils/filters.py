@@ -5,10 +5,10 @@ from providers.models import FeedItem
 
 def matches_filter(entry: FeedItem, filter_rules: str) -> bool:
     """
-    Verifica se un FeedItem rispetta le regole di filtro configurate per l'utente.
-    Sintassi regole:
-    - '+keyword' o 'keyword': l'articolo deve contenere almeno una delle parole positive indicate
-    - '-keyword': l'articolo NON deve contenere nessuna delle parole negative indicate
+    Checks if a FeedItem matches keyword filter rules configured for the user.
+    Rule syntax:
+    - '+keyword' or 'keyword': article must contain at least one of the positive keywords
+    - '-keyword': article must NOT contain any of the negative keywords
     """
     if not filter_rules or not filter_rules.strip():
         return True
@@ -31,14 +31,15 @@ def matches_filter(entry: FeedItem, filter_rules: str) -> bool:
         else:
             positive_keywords.append(t.lower())
 
-    # Se è presente una parola negativa -> scarta
+    # If any negative keyword matches -> reject
     for neg in negative_keywords:
         if neg in text:
             return False
 
-    # Se sono definite parole positive -> deve contenerne almeno una
+    # If positive keywords are defined -> must contain at least one
     if positive_keywords:
         if not any(pos in text for pos in positive_keywords):
             return False
 
     return True
+

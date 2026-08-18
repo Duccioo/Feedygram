@@ -34,7 +34,7 @@ class FeedHandler:
                 return feed
             return None
         except Exception as e:
-            print(f"Errore durante il parsing del feed {url}: {e}")
+            print(f"Error parsing feed {url}: {e}")
             return None
 
     @classmethod
@@ -43,7 +43,7 @@ class FeedHandler:
         if not feed:
             return None
 
-        # Se entries <= 0 (es. 0 o -1), restituisce tutti gli articoli disponibili
+        # If entries <= 0 (e.g. 0 or -1), return all available articles
         if entries <= 0:
             return list(feed.entries)
         return list(feed.entries[:entries])
@@ -58,31 +58,31 @@ class FeedHandler:
     @classmethod
     def is_parsable(cls, url: str) -> Tuple[bool, Optional[str]]:
         """
-        Verifica se l'URL fornito è un feed RSS analizzabile.
-        Restituisce una tupla: (True/False, messaggio_di_errore_o_None).
+        Verifies if provided URL is a parsable RSS/Atom feed.
+        Returns a tuple: (True/False, error_message_or_None).
         """
         url = cls.format_url_string(url)
         try:
             feed = feedparser.parse(url, agent=cls.USER_AGENT)
         except Exception as e:
-            return False, f"Impossibile raggiungere il feed: {e}"
+            return False, f"Unable to reach feed: {e}"
 
-        # Se feed.entries contiene elementi, il feed è valido anche se ci sono warning XML minori (bozo=1)
+        # If feed.entries contains items, the feed is valid even with minor XML warnings (bozo=1)
         if hasattr(feed, "entries") and len(feed.entries) > 0:
             return True, None
 
         if feed.bozo and hasattr(feed, "bozo_exception"):
-            return False, f"Errore nel formato del feed: {feed.bozo_exception}"
+            return False, f"Feed format error: {feed.bozo_exception}"
 
         if not hasattr(feed, "entries") or len(feed.entries) == 0:
-            return False, "Il feed non contiene articoli (entries)."
+            return False, "The feed does not contain any entries."
 
         return True, None
 
     @classmethod
     def discover_feed_url(cls, url: str) -> Optional[str]:
         """
-        Rileva automaticamente l'endpoint RSS/Atom/JSON a partire da un generico URL web.
+        Automatically detects RSS/Atom/JSON feed endpoint from a generic website URL.
         """
         formatted = cls.format_url_string(url)
         is_ok, _ = cls.is_parsable(formatted)
@@ -100,7 +100,7 @@ class FeedHandler:
 
             soup = BeautifulSoup(resp.text, "html.parser")
 
-            # 1. Cerca link rel="alternate" nel tag <head>
+            # 1. Look for rel="alternate" in <head>
             feed_types = {
                 "application/rss+xml",
                 "application/atom+xml",
@@ -117,7 +117,7 @@ class FeedHandler:
                     if cand_ok:
                         return candidate
 
-            # 2. Cerca link comuni nell'HTML
+            # 2. Look for common feed links in HTML
             for a in soup.find_all("a", href=True):
                 href = a["href"].strip()
                 if any(href.lower().endswith(ext) for ext in (".rss", ".atom", "/feed", "/rss", "/rss.xml", "/feed.xml")):
@@ -126,7 +126,7 @@ class FeedHandler:
                     if cand_ok:
                         return candidate
 
-            # 3. Tentativi su percorsi standard
+            # 3. Try standard common paths
             for common_path in ("/feed", "/rss", "/feed.xml", "/rss.xml", "/atom.xml", "/index.xml"):
                 candidate = urljoin(formatted, common_path)
                 cand_ok, _ = cls.is_parsable(candidate)
@@ -148,19 +148,19 @@ class FeedHandler:
     @staticmethod
     def get_entry_id(entry: Any) -> str:
         """
-        Restituisce un identificatore univoco e consistente per un entry del feed.
+        Returns a unique and consistent identifier for a feed entry.
         """
-        # 1. Prova l'ID / GUID esplicito
+        # 1. Try explicit ID / GUID
         entry_id = getattr(entry, "id", None) or getattr(entry, "guid", None)
         if entry_id and str(entry_id).strip():
             return str(entry_id).strip()
 
-        # 2. Prova il link
+        # 2. Try link
         link = getattr(entry, "link", None)
         if link and str(link).strip():
             return str(link).strip()
 
-        # 3. Fallback deterministico su titolo + data
+        # 3. Deterministic fallback on title + date
         title = getattr(entry, "title", "")
         date = (
             getattr(entry, "published", "")
@@ -172,8 +172,8 @@ class FeedHandler:
     @staticmethod
     def extract_source_link(entry: Any) -> Optional[str]:
         """
-        Tenta di estrarre un link alla fonte originale se l'entry proviene da un aggregatore proxy come Kagi.
-        In caso contrario restituisce il link principale dell'entry.
+        Attempts to extract original source link if entry comes from a proxy aggregator (e.g. Kagi).
+        Otherwise returns entry's primary link.
         """
         link = getattr(entry, "link", None)
         if link and "kagi.com" not in link:
@@ -201,6 +201,7 @@ if __name__ == "__main__":
     link_1 = "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_weekly.xml"
     feed = FeedHandler.parse_feed(link_1)
     if feed and feed.entries:
-        print("Testata:", getattr(feed.feed, "title", "No Title"))
-        print("Primo articolo ID:", FeedHandler.get_entry_id(feed.entries[0]))
+        print("Header:", getattr(feed.feed, "title", "No Title"))
+        print("First article ID:", FeedHandler.get_entry_id(feed.entries[0]))
+
 

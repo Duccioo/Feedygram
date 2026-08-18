@@ -4,21 +4,21 @@ from typing import Optional
 
 def extract_reddit_target(target: str) -> Optional[str]:
     """
-    Riconosce se l'input è un subreddit o un profilo utente Reddit e restituisce l'URL RSS nativo.
-    Formati supportati:
-    - 'r/technology' o '/r/technology'
-    - 'u/spez' o 'user/spez'
+    Detects if input is a subreddit or Reddit user profile and returns native RSS URL.
+    Supported formats:
+    - 'r/technology' or '/r/technology'
+    - 'u/spez' or 'user/spez'
     - 'https://reddit.com/r/technology'
     - 'https://www.reddit.com/user/spez'
     """
     target = target.strip()
 
-    # Subreddit shorthand: r/subreddit o /r/subreddit
+    # Subreddit shorthand: r/subreddit or /r/subreddit
     match_r = re.match(r"^/?r/([A-Za-z0-9_]{2,30})/?$", target, re.IGNORECASE)
     if match_r:
         return f"https://www.reddit.com/r/{match_r.group(1)}/.rss"
 
-    # User shorthand: u/username o user/username
+    # User shorthand: u/username or user/username
     match_u = re.match(r"^/?(?:u|user)/([A-Za-z0-9_-]{2,30})/?$", target, re.IGNORECASE)
     if match_u:
         return f"https://www.reddit.com/user/{match_u.group(1)}/.rss"
@@ -33,3 +33,4 @@ def extract_reddit_target(target: str) -> Optional[str]:
         return f"https://www.reddit.com/user/{match_url_u.group(1)}/.rss"
 
     return None
+

@@ -20,7 +20,7 @@ MESSAGES_LIST = [
 
 
 def make_feed_keyboard(name: str = "", alias: str = "", set_telegraph: bool = False, link: str = "", title: str = "") -> InlineKeyboardMarkup:
-    """Crea la tastiera inline per scambiare la modalità del link e richiedere il TL;DR"""
+    """Create inline keyboard to toggle link mode and request TL;DR"""
     toggle_data = {
         "option": "change_feed_link",
         "alias": alias,
@@ -36,7 +36,7 @@ def make_feed_keyboard(name: str = "", alias: str = "", set_telegraph: bool = Fa
     }
     keyboard = [
         [InlineKeyboardButton(name, callback_data=toggle_data)],
-        [InlineKeyboardButton("📝 TL;DR (Sintesi)", callback_data=tldr_data)],
+        [InlineKeyboardButton("📝 TL;DR Summary", callback_data=tldr_data)],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -48,7 +48,8 @@ def send_feed(
     post_title: str,
     tags: Optional[List[str]] = None,
 ) -> Tuple[str, InlineKeyboardMarkup]:
-    """Genera il testo formattato in HTML con hashtag nativi e la tastiera per un articolo RSS"""
+    """Generate HTML-formatted text with hashtags and keyboard for an RSS item"""
+
     safe_title = html.escape(str(post_title).strip() if post_title else "No Title")
     safe_alias = html.escape(str(alias).strip() if alias else "Feed")
 

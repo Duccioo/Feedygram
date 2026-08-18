@@ -10,7 +10,7 @@ from contextlib import contextmanager
 # ---
 from utils.datehandler import DateHandler as dh
 
-# Configurazione logging
+# Logging configuration
 logger = logging.getLogger(__name__)
 
 
@@ -24,44 +24,44 @@ class DatabaseHandler:
         self._enable_foreign_keys()
 
     def _init_database(self) -> None:
-        """Inizializza il database se non esiste ed esegue migrazioni necessarie"""
+        """Initializes database if missing and executes necessary migrations"""
         db_dir = os.path.dirname(self.database_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
         if not os.path.exists(self.database_path):
-            logger.info("Creazione nuovo database: %s", self.database_path)
+            logger.info("Creating new database: %s", self.database_path)
             self._execute_schema_script()
         else:
             self._run_migrations()
 
     def _run_migrations(self) -> None:
-        """Applica modifiche allo schema per database già esistenti"""
+        """Applies schema migrations for existing databases"""
         try:
             with self._get_connection() as conn:
-                # Migrazione web_user (filter_rules)
+                # web_user migration (filter_rules)
                 cursor = conn.execute("PRAGMA table_info(web_user)")
                 columns_wu = [row[1] for row in cursor.fetchall()]
                 if "filter_rules" not in columns_wu:
                     conn.execute("ALTER TABLE web_user ADD COLUMN filter_rules TEXT DEFAULT ''")
-                    logger.info("Aggiunta colonna filter_rules a web_user")
+                    logger.info("Added filter_rules column to web_user")
 
-                # Migrazione web (last_entry_id)
+                # web migration (last_entry_id)
                 cursor = conn.execute("PRAGMA table_info(web)")
                 columns_w = [row[1] for row in cursor.fetchall()]
                 if "last_entry_id" not in columns_w:
                     conn.execute("ALTER TABLE web ADD COLUMN last_entry_id TEXT")
-                    logger.info("Aggiunta colonna last_entry_id a web")
+                    logger.info("Added last_entry_id column to web")
         except Exception as e:
-            logger.warning("Migrazione schema database: %s", e)
+            logger.warning("Database schema migration: %s", e)
 
     def _enable_foreign_keys(self) -> None:
-        """Abilita i vincoli di foreign key"""
+        """Enables SQLite foreign key constraints"""
         with self._get_connection() as conn:
             conn.execute("PRAGMA foreign_keys = ON")
 
     def _execute_schema_script(self) -> None:
-        """Esegue lo script di inizializzazione del database"""
+        """Executes database initialization SQL schema script"""
         schema_file = Path(__file__).resolve().parent.parent / "database" / "setup.sql"
 
         try:
@@ -70,15 +70,15 @@ class DatabaseHandler:
 
             with self._get_connection() as conn:
                 conn.executescript(schema)
-            logger.info("Schema database inizializzato correttamente")
+            logger.info("Database schema initialized successfully")
 
         except Exception as e:
-            logger.error("Errore nell'inizializzazione del database: %s", str(e))
-            raise RuntimeError("Impossibile inizializzare il database") from e
+            logger.error("Error initializing database: %s", str(e))
+            raise RuntimeError("Unable to initialize database") from e
 
     @contextmanager
     def _get_connection(self):
-        """Restituisce una connessione al database garantendone commit e chiusura"""
+        """Yields a database connection with auto-commit and closure"""
         conn = sqlite3.connect(self.database_path, check_same_thread=False)
         try:
             with conn:
@@ -87,7 +87,7 @@ class DatabaseHandler:
             conn.close()
 
     def get_all_feeds(self) -> List[Tuple[str, Any, str, Optional[str]]]:
-        """Restituisce tutti i feed con iscritti attivi"""
+        """Returns all feeds with active subscribers"""
         query = """
             SELECT DISTINCT w.url, w.last_updated, w.last_title, w.last_entry_id
             FROM web w
@@ -100,7 +100,7 @@ class DatabaseHandler:
             return cursor.fetchall()
 
     def get_active_users_for_feed(self, url: str) -> List[Tuple[int, bool, str, str]]:
-        """Restituisce gli ID utente attivi, preferenza Telegraph, alias e regole di filtro per un feed"""
+        """Returns active user IDs, Telegraph preference, alias and filter rules for a feed"""
         query = """
             SELECT wu.telegram_id, wu.telegraph, wu.alias, COALESCE(wu.filter_rules, '')
             FROM web_user wu
@@ -112,14 +112,14 @@ class DatabaseHandler:
             return [(row[0], bool(row[1]), str(row[2]), str(row[3])) for row in cursor.fetchall()]
 
     def update_feed(self, url: str, last_updated: Any, last_title: str, last_entry_id: Optional[str]) -> None:
-        """Aggiorna i metadati di un feed, incluso l'ID dell'ultimo entry."""
+        """Updates metadata for a feed, including latest entry ID."""
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE web SET last_updated = ?, last_title = ?, last_entry_id = ? WHERE url = ?",
                 (str(last_updated), last_title, last_entry_id, url),
             )
 
-    # Metodi per la gestione degli utenti
+    # User management methods
     def add_user(
         self,
         telegram_id: int,
@@ -130,7 +130,7 @@ class DatabaseHandler:
         is_bot: bool,
         is_active: bool = True,
     ) -> None:
-        """Aggiunge o aggiorna un utente al database"""
+        """Adds or updates a user in the database"""
         query = """
             INSERT INTO user (telegram_id, username, firstname, lastname, 
                             language, is_bot, is_active)
@@ -157,13 +157,13 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def remove_user(self, telegram_id: int) -> None:
-        """Rimuove un utente e tutti i suoi collegamenti"""
+        """Removes a user and all associated bookmarks"""
         query = "DELETE FROM user WHERE telegram_id = ?"
         with self._get_connection() as conn:
             conn.execute(query, (telegram_id,))
 
     def update_user(self, telegram_id: int, **kwargs) -> None:
-        """Aggiorna i dati di un utente"""
+        """Updates user data"""
         if not kwargs:
             return
 
@@ -179,24 +179,24 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def get_user(self, telegram_id: int) -> Optional[Tuple]:
-        """Recupera un utente per ID"""
+        """Retrieves a user by ID"""
         query = "SELECT * FROM user WHERE telegram_id = ?"
         with self._get_connection() as conn:
             cursor = conn.execute(query, (telegram_id,))
             return cursor.fetchone()
 
     def deactivate_user(self, telegram_id: int) -> None:
-        """Disattiva un utente"""
+        """Deactivates a user"""
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE user SET is_active = 0 WHERE telegram_id = ?", (telegram_id,)
             )
 
-    # Metodi per la gestione dei feed
+    # Feed management methods
     def add_url(self, url: str) -> None:
-        """Aggiunge un feed al database"""
+        """Adds a feed URL to the database"""
         if not self._is_valid_url(url):
-            raise ValueError("URL non valido")
+            raise ValueError("Invalid URL")
 
         query = """
             INSERT INTO web (url, last_title, last_updated, last_entry_id)
@@ -209,13 +209,13 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def remove_url(self, url: str) -> None:
-        """Rimuove un feed e tutti i collegamenti utente"""
+        """Removes a feed and cascades to user bookmarks"""
         query = "DELETE FROM web WHERE url = ?"
         with self._get_connection() as conn:
             conn.execute(query, (url,))
 
     def update_url(self, url: str, **kwargs) -> None:
-        """Aggiorna i dati di un feed"""
+        """Updates feed data"""
         if not kwargs:
             return
 
@@ -231,25 +231,25 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def get_url(self, url: str) -> Optional[Tuple]:
-        """Recupera un feed per URL"""
+        """Retrieves a feed by URL"""
         query = "SELECT * FROM web WHERE url = ?"
         with self._get_connection() as conn:
             cursor = conn.execute(query, (url,))
             return cursor.fetchone()
 
     def get_all_urls(self) -> List[Tuple]:
-        """Restituisce tutti i feed registrati"""
+        """Returns all registered feeds"""
         query = "SELECT * FROM web"
         with self._get_connection() as conn:
             cursor = conn.execute(query)
             return cursor.fetchall()
 
-    # Metodi per i bookmark degli utenti
+    # User bookmark methods
     def add_user_bookmark(
         self, telegram_id: int, url: str, alias: str, telegraph: bool = False
     ) -> None:
-        """Aggiunge un bookmark per un utente, assicurando che l'utente esista nel database"""
-        # Assicura che l'utente esista per evitare violazioni di foreign key
+        """Adds a bookmark for a user, ensuring the user exists in database"""
+        # Ensure user exists to prevent foreign key violations
         if not self.get_user(telegram_id):
             self.add_user(
                 telegram_id=telegram_id,
@@ -264,7 +264,7 @@ class DatabaseHandler:
         try:
             self.add_url(url)
         except ValueError:
-            logger.warning("Feed già esistente: %s", url)
+            logger.warning("Feed already exists: %s", url)
 
         query = """
             INSERT INTO web_user (url, telegram_id, alias, telegraph)
@@ -279,7 +279,7 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def remove_user_bookmark(self, telegram_id: int, url: str) -> None:
-        """Rimuove un bookmark per un utente"""
+        """Removes a bookmark for a user"""
         query = """
             DELETE FROM web_user 
             WHERE telegram_id = ? AND url = ?
@@ -294,7 +294,7 @@ class DatabaseHandler:
         alias: Optional[str] = None,
         telegraph: Optional[bool] = None,
     ) -> None:
-        """Aggiorna un bookmark esistente"""
+        """Updates an existing bookmark"""
         updates = {}
         if alias is not None:
             updates["alias"] = alias.strip()
@@ -316,7 +316,7 @@ class DatabaseHandler:
             conn.execute(query, params)
 
     def get_user_bookmark(self, telegram_id: int, alias: str) -> Optional[Tuple]:
-        """Recupera un bookmark per alias utente"""
+        """Retrieves a bookmark by user alias"""
         query = """
             SELECT w.url, wu.alias, w.last_updated, wu.telegraph
             FROM web_user wu
@@ -328,7 +328,7 @@ class DatabaseHandler:
             return cursor.fetchone()
 
     def get_urls_for_user(self, telegram_id: int) -> List[Tuple]:
-        """Restituisce tutti i bookmark di un utente inclusi filtri e modalità link"""
+        """Returns all bookmarks for a user including filters and link mode"""
         query = """
             SELECT w.url, wu.alias, w.last_updated, w.last_title, COALESCE(wu.filter_rules, ''), COALESCE(wu.telegraph, 0)
             FROM web_user wu
@@ -340,14 +340,14 @@ class DatabaseHandler:
             return cursor.fetchall()
 
     def update_user_bookmark_filter(self, telegram_id: int, alias: str, filter_rules: str) -> bool:
-        """Aggiorna le regole di filtro per un bookmark utente"""
+        """Updates filter rules for a user bookmark"""
         query = "UPDATE web_user SET filter_rules = ? WHERE telegram_id = ? AND alias = ?"
         with self._get_connection() as conn:
             cursor = conn.execute(query, (str(filter_rules).strip(), telegram_id, str(alias).strip()))
             return cursor.rowcount > 0
 
     def get_users_for_url(self, url: str) -> List[Tuple]:
-        """Restituisce tutti gli utenti iscritti a un feed"""
+        """Returns all users subscribed to a feed"""
         query = """
             SELECT u.*, wu.alias, wu.telegraph
             FROM web_user wu
@@ -359,7 +359,7 @@ class DatabaseHandler:
             return cursor.fetchall()
 
     def get_total_users(self, active_only: bool = False) -> int:
-        """Conta gli utenti totali"""
+        """Counts total users"""
         query = "SELECT COUNT(*) FROM user"
         if active_only:
             query += " WHERE is_active = 1"
@@ -368,10 +368,10 @@ class DatabaseHandler:
             cursor = conn.execute(query)
             return cursor.fetchone()[0]
 
-    # Metodi di validazione
+    # Validation methods
     @staticmethod
     def _is_valid_url(url: str) -> bool:
-        """Valida un URL"""
+        """Validates a URL"""
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
@@ -380,7 +380,8 @@ class DatabaseHandler:
 
     @staticmethod
     def _validate_alias(alias: str) -> None:
-        """Valida il formato di un alias"""
+        """Validates alias format"""
         if not 1 <= len(alias) <= 64:
-            raise ValueError("L'alias deve essere tra 1 e 64 caratteri")
+            raise ValueError("Alias must be between 1 and 64 characters")
+
 

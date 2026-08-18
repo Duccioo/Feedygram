@@ -17,7 +17,23 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+
+MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("📖 My Feeds"), KeyboardButton("🔍 Explore Feeds")],
+        [KeyboardButton("➕ Add Feed"), KeyboardButton("📥 Get Feeds")],
+        [KeyboardButton("🗑️ Remove Feed"), KeyboardButton("⚙️ Keyword Filters")],
+        [KeyboardButton("💾 Backup & OPML"), KeyboardButton("❓ Help & Info")],
+    ],
+    resize_keyboard=True,
+)
 
 # -----
 from utils.database import DatabaseHandler
@@ -44,7 +60,7 @@ from utils.presets import (
 )
 
 
-# Configurazione logging
+# Logging configuration
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -54,7 +70,7 @@ UPDATE_INTERVAL = os.environ.get("UPDATE_INTERVAL", "300")
 
 
 def validate_callback_data(pattern: str):
-    """Factory per creare funzioni di validazione callback data"""
+    """Factory to create callback data validation functions"""
     def checker(callback_data: Any) -> bool:
         if isinstance(callback_data, dict):
             return callback_data.get("option") == pattern
@@ -81,11 +97,11 @@ class Feedergraph(object):
 
     def _validate_config(self, token: str, interval: str) -> None:
         if not token:
-            raise ValueError("Telegram token mancante. Imposta TELEGRAM_TOKEN nelle variabili d'ambiente.")
+            raise ValueError("Missing Telegram token. Set TELEGRAM_TOKEN in environment variables.")
         try:
             int(interval)
         except ValueError:
-            raise ValueError("UPDATE_INTERVAL deve essere un numero intero (in secondi).")
+            raise ValueError("UPDATE_INTERVAL must be an integer (in seconds).")
 
     def _init_bot(self, token: str) -> None:
         self.bot = (
@@ -115,6 +131,7 @@ class Feedergraph(object):
             CommandHandler("filter", self.filter_command),
             CommandHandler("channel", self.channel_command),
             CommandHandler(["explore", "presets", "popular"], self.explore_command),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_menu_text),
             MessageHandler(filters.Document.ALL, self.handle_document),
         ]
 
@@ -156,10 +173,10 @@ class Feedergraph(object):
                 provider=self.provider,
             )
             self.job_queue.run_repeating(self.processing.run, interval_int, first=1)
-            logger.info("Bot e polling avviati correttamente")
+            logger.info("Bot and polling started successfully")
             self.bot.run_polling()
         except Exception as e:
-            logger.critical(f"Errore avvio bot: {e}")
+            logger.critical(f"Bot startup error: {e}")
             raise
 
     async def start(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -170,23 +187,22 @@ class Feedergraph(object):
             else:
                 self.db.update_user(user.id, is_active=1)
                 await update.message.reply_text(
-                    f"{bip_bop()}OK Human! Now everything is ready{bip_bop()}\n"
-                    f"Use <b>/help</b> if you need some tips!",
+                    f"{bip_bop()}Welcome back! All set.{bip_bop()}\n\n"
+                    "Use the buttons below to manage your feeds or send me a link directly!",
                     parse_mode="HTML",
+                    reply_markup=MAIN_MENU_KEYBOARD,
                 )
         except Exception as e:
-            logger.error(f"Errore durante /start: {e}")
-            await update.message.reply_text("Oops! Qualcosa è andato storto durante l'avvio.")
+            logger.error(f"Error during /start: {e}")
+            await update.message.reply_text("Oops! Something went wrong while starting.")
 
     async def _handle_new_user(self, update, user: Any) -> None:
         welcome_msg = (
-            "Ciao👋! It's your first time😏?"
-            f"{bip_bop()}\nWell... Everyone has had a first time😌, "
-            "so to start add a new Feed in your list with <b>/add</b>\n"
-            "If you are lost send me <b>/help</b> then I'll give you some tips😜\n"
-            f"{bip_bop()}"
+            "Hi👋! Welcome to <b>Feedygram</b>!\n\n"
+            "Tap the buttons below to discover popular feeds, view your subscriptions, or send me any website URL to follow it instantly!\n\n"
+            f"If you need help, tap <b>❓ Help & Info</b> or type <b>/help</b>.{bip_bop()}"
         )
-        await update.message.reply_text(welcome_msg, parse_mode="HTML")
+        await update.message.reply_text(welcome_msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
         self.db.add_user(
             telegram_id=user.id,
             username=user.username,
@@ -197,8 +213,9 @@ class Feedergraph(object):
             is_active=1,
         )
 
+
     async def update_message(self, update, context):
-        """Aggiorna un singolo messaggio di feed scambiando il tipo di link (Normal vs Telegraph)"""
+        """Updates a single feed message toggling link type (Normal vs Telegraph)"""
         query = update.callback_query
         if query is not None:
             await query.answer()
@@ -216,7 +233,7 @@ class Feedergraph(object):
             )
 
     async def change_list_type(self, update, context):
-        """Modifica la preferenza di default di un feed per l'utente (Normal Link vs Telegraph)"""
+        """Updates user default link preference for a feed (Normal Link vs Telegraph)"""
         query = update.callback_query
         if query is not None:
             await query.answer()
@@ -267,7 +284,7 @@ class Feedergraph(object):
             )
 
     async def add(self, update, context):
-        """Aggiunge una nuova sottoscrizione RSS all'utente"""
+        """Adds a new RSS subscription for the user"""
         effective_user = update.effective_user or update.effective_chat
         chat_id = update.effective_chat.id
         msg = update.effective_message
@@ -276,7 +293,7 @@ class Feedergraph(object):
 
         example_list = [
             "🍕Best site for cooking Pizza🍕",
-            "🐶BauBau",
+            "🐶WoofWoof",
             "🎮Games&Tech🍹",
             "📰Daily News",
         ]
@@ -292,7 +309,7 @@ class Feedergraph(object):
             await msg.reply_text(message, parse_mode="HTML")
             return
 
-        # Rilevamento automatico sorgenti speciali (Twitter, YouTube, Reddit)
+        # Auto-detect special sources (Twitter, YouTube, Reddit)
         twitter_user = extract_twitter_username(parts[1])
         yt_feed_url = get_youtube_rss_url(parts[1])
         reddit_feed_url = extract_reddit_target(parts[1])
@@ -321,11 +338,11 @@ class Feedergraph(object):
                 r_title = self.provider.get_feed_title(arg_url)
                 arg_entry = f"🤖 {r_title.strip()}" if r_title else f"🤖 {parts[1]}"
         else:
-            # Auto-discovery dell'URL del feed se l'utente ha inserito una homepage o pagina HTML
+            # Feed URL auto-discovery if user provided a website homepage or HTML page
             discovered = FeedHandler.discover_feed_url(parts[1])
             arg_url = discovered or FeedHandler.format_url_string(parts[1])
 
-            # Verifica se il feed è valido tramite il provider
+            # Validate feed via provider
             is_parsable, error_message = self.provider.validate_feed(arg_url)
             if not is_parsable:
                 safe_url = html.escape(arg_url)
@@ -338,7 +355,7 @@ class Feedergraph(object):
                 await msg.reply_text(user_friendly_message, parse_mode="HTML")
                 return
 
-            # Assegnazione alias (personalizzato o titolo del feed)
+            # Assign alias (custom or feed title)
             if len(parts) >= 3:
                 arg_entry = parts[2].strip()
             else:
@@ -350,7 +367,7 @@ class Feedergraph(object):
 
         user_entries = self.db.get_urls_for_user(telegram_id=chat_id)
 
-        # Controllo se l'URL è già memorizzato per questo utente
+        # Check if URL is already saved for this user
         if any(arg_url == entry[0] for entry in user_entries):
             user_name = getattr(effective_user, "first_name", None) or getattr(effective_user, "title", "Human")
             safe_name = html.escape(str(user_name))
@@ -362,7 +379,7 @@ class Feedergraph(object):
             await msg.reply_text(message, parse_mode="HTML")
             return
 
-        # Controllo se l'alias è già usato per questo utente
+        # Check if alias is already used for this user
         if any(arg_entry == entry[1] for entry in user_entries):
             message = (
                 "🤬<b>NOOOO!\nI ALREADY HAVE AN ENTRY WITH THAT NAME!!</b>\n\n"
@@ -400,7 +417,7 @@ class Feedergraph(object):
         )
 
     async def get_n_feed(self, update, context):
-        """Invia gli ultimi N articoli del feed selezionato"""
+        """Sends the latest N articles for the selected feed"""
         query = update.callback_query
         if query is not None:
             await query.answer()
@@ -446,7 +463,7 @@ class Feedergraph(object):
                 )
 
     async def get(self, update, context):
-        """Mostra il menu per richiedere manualmente gli articoli di un feed"""
+        """Shows menu to manually request articles for a feed"""
         query = update.callback_query
 
         if query is not None:
@@ -511,7 +528,7 @@ class Feedergraph(object):
             )
 
     async def remove(self, update, context):
-        """Mostra la lista dei feed salvati per permettere la rimozione"""
+        """Shows the list of saved feeds allowing removal"""
         query = update.callback_query
 
         if query is not None:
@@ -543,7 +560,7 @@ class Feedergraph(object):
             )
 
     async def list(self, update, context):
-        """Mostra tutti i feed registrati con la possibilità di cambiare modalità link"""
+        """Shows all registered feeds with option to toggle link mode"""
         chat_id = update.effective_chat.id
         entries = self.db.get_urls_for_user(telegram_id=chat_id)
 
@@ -572,11 +589,15 @@ class Feedergraph(object):
             )
 
     async def help(self, update, context):
-        """Invia il messaggio di aiuto"""
-        await update.effective_message.reply_text(help_message(), parse_mode="HTML")
+        """Sends help message with quick start keyboard"""
+        await update.effective_message.reply_text(
+            help_message(),
+            parse_mode="HTML",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
 
     async def stop(self, update, context):
-        """Disattiva gli aggiornamenti per l'utente"""
+        """Deactivates feed updates for the user"""
         user = update.effective_user or update.effective_chat
         await update.effective_message.reply_text(
             stop_handler(telegram_user=user, db=self.db),
@@ -584,17 +605,18 @@ class Feedergraph(object):
         )
 
     async def about(self, update, context):
-        """Mostra le informazioni sul bot"""
+        """Shows information about the bot"""
         message = about_message(number=self.db.get_total_users(active_only=True))
         await update.effective_message.reply_text(text=message, parse_mode="HTML")
 
+
     async def export_feeds(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Esporta tutte le sottoscrizioni dell'utente in un file OPML"""
+        """Exports all user subscriptions to an OPML file"""
         chat_id = update.effective_chat.id
         entries = self.db.get_urls_for_user(telegram_id=chat_id)
         if not entries:
             await update.effective_message.reply_text(
-                f"{bip_bop()} Non hai ancora nessun feed salvato da esportare! Usa <b>/add</b> per aggiungerne uno.",
+                f"{bip_bop()} You don't have any saved feeds to export yet! Use <b>/add</b> to add one.",
                 parse_mode="HTML",
             )
             return
@@ -604,21 +626,21 @@ class Feedergraph(object):
             chat_id=chat_id,
             document=opml_buffer,
             filename="feedygram_subscriptions.opml",
-            caption=f"📦 Ecco il backup dei tuoi <b>{len(entries)}</b> feed in formato OPML!",
+            caption=f"📦 Here is the backup of your <b>{len(entries)}</b> feeds in OPML format!",
             parse_mode="HTML",
         )
 
     async def import_prompt(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Invia istruzioni per l'importazione di un file OPML"""
+        """Sends instructions for importing an OPML file"""
         message = (
-            f"{bip_bop()} <b>Importazione Feed (OPML)</b>\n\n"
-            "Invia direttamente un file <code>.opml</code> o <code>.xml</code> in questa chat "
-            "e importerò automaticamente tutti i feed per te!"
+            f"{bip_bop()} <b>Feed Import (OPML)</b>\n\n"
+            "Send a <code>.opml</code> or <code>.xml</code> file directly into this chat "
+            "and I will automatically import all feeds for you!"
         )
         await update.effective_message.reply_text(message, parse_mode="HTML")
 
     async def handle_document(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Gestisce il caricamento di file OPML per importare le sottoscrizioni"""
+        """Handles OPML file uploads to import subscriptions"""
         doc = update.effective_message.document if update.effective_message else None
         if not doc or not doc.file_name:
             return
@@ -628,7 +650,7 @@ class Feedergraph(object):
             return
 
         chat_id = update.effective_chat.id
-        status_msg = await update.effective_message.reply_text(f"{bip_bop()} Analisi del file OPML in corso...")
+        status_msg = await update.effective_message.reply_text(f"{bip_bop()} Analyzing OPML file...")
 
         try:
             tg_file = await context.bot.get_file(doc.file_id)
@@ -636,7 +658,7 @@ class Feedergraph(object):
             parsed_feeds = parse_opml(bytes(file_bytes))
 
             if not parsed_feeds:
-                await status_msg.edit_text(f"{bip_bop()} Nessun feed valido trovato nel file OPML fornito.")
+                await status_msg.edit_text(f"{bip_bop()} No valid feeds found in the provided OPML file.")
                 return
 
             existing = {entry[0] for entry in self.db.get_urls_for_user(telegram_id=chat_id)}
@@ -659,84 +681,84 @@ class Feedergraph(object):
                     skipped += 1
 
             result_msg = (
-                f"🎉 <b>Importazione completata!</b>\n\n"
-                f"✅ Feed aggiunti: <b>{added}</b>\n"
-                f"⏭️ Feed ignorati o duplicati: <b>{skipped}</b>\n\n"
-                "Usa <b>/list</b> per vedere la lista aggiornata."
+                f"🎉 <b>Import completed!</b>\n\n"
+                f"✅ Feeds added: <b>{added}</b>\n"
+                f"⏭️ Feeds skipped or duplicate: <b>{skipped}</b>\n\n"
+                "Use <b>/list</b> to see your updated subscriptions."
             )
             await status_msg.edit_text(result_msg, parse_mode="HTML")
 
         except Exception as e:
-            logger.error(f"Errore importazione OPML: {e}")
-            await status_msg.edit_text(f"❌ Errore durante l'importazione del file OPML: {e}")
+            logger.error(f"OPML import error: {e}")
+            await status_msg.edit_text(f"❌ Error while importing OPML file: {e}")
 
     async def twitter_add(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Comando rapido per seguire un account Twitter / X"""
+        """Quick command to follow a Twitter / X account"""
         msg = update.effective_message
         raw_text = msg.text.strip() if msg and msg.text else ""
         parts = raw_text.split(maxsplit=2)
         if len(parts) < 2:
             await msg.reply_text(
-                f"{bip_bop()} Per seguire un account Twitter / X usa:\n\n"
-                "<code>/x @username</code> oppure <code>/twitter @username</code>\n"
-                "<i>(Opzionale)</i> con nome: <code>/x @username Mio Canale</code>",
+                f"{bip_bop()} To follow a Twitter / X account use:\n\n"
+                "<code>/x @username</code> or <code>/twitter @username</code>\n"
+                "<i>(Optional)</i> with custom name: <code>/x @username My Channel</code>",
                 parse_mode="HTML",
             )
             return
         await self.add(update, context)
 
     async def youtube_add(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Comando rapido per seguire un canale o playlist YouTube"""
+        """Quick command to follow a YouTube channel or playlist"""
         msg = update.effective_message
         raw_text = msg.text.strip() if msg and msg.text else ""
         parts = raw_text.split(maxsplit=2)
         if len(parts) < 2:
             await msg.reply_text(
-                f"{bip_bop()} Per seguire un canale o playlist YouTube usa:\n\n"
-                "<code>/youtube @nomecanale</code> oppure <code>/yt https://youtube.com/@handle</code>",
+                f"{bip_bop()} To follow a YouTube channel or playlist use:\n\n"
+                "<code>/youtube @channelname</code> or <code>/yt https://youtube.com/@handle</code>",
                 parse_mode="HTML",
             )
             return
         await self.add(update, context)
 
     async def reddit_add(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Comando rapido per seguire un subreddit o utente Reddit"""
+        """Quick command to follow a Reddit subreddit or user"""
         msg = update.effective_message
         raw_text = msg.text.strip() if msg and msg.text else ""
         parts = raw_text.split(maxsplit=2)
         if len(parts) < 2:
             await msg.reply_text(
-                f"{bip_bop()} Per seguire un subreddit o utente Reddit usa:\n\n"
-                "<code>/reddit r/technology</code> oppure <code>/r python</code>",
+                f"{bip_bop()} To follow a Reddit subreddit or user use:\n\n"
+                "<code>/reddit r/technology</code> or <code>/r python</code>",
                 parse_mode="HTML",
             )
             return
         await self.add(update, context)
 
     async def filter_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Gestisce l'impostazione dei filtri parole chiave per un feed"""
+        """Handles configuring keyword filters for a feed"""
         chat_id = update.effective_chat.id
         msg = update.effective_message
         raw_text = msg.text.strip() if msg and msg.text else ""
         entries = self.db.get_urls_for_user(telegram_id=chat_id)
 
         if not entries:
-            await msg.reply_text(f"{bip_bop()} Non hai ancora feed salvati.")
+            await msg.reply_text(f"{bip_bop()} You don't have any saved feeds yet.")
             return
 
         cmd_parts = raw_text.split(maxsplit=1)
         if len(cmd_parts) < 2:
-            lines = ["<b>🔍 Filtri parole chiave attivi:</b>\n"]
+            lines = ["<b>🔍 Active keyword filters:</b>\n"]
             for i, entry in enumerate(entries):
                 alias = entry[1]
-                rules = entry[4] if len(entry) > 4 and entry[4] else "<i>nessun filtro</i>"
+                rules = entry[4] if len(entry) > 4 and entry[4] else "<i>no filters</i>"
                 lines.append(f"{i + 1}️⃣ • <b>{html.escape(alias)}</b>: <code>{html.escape(rules)}</code>")
 
-            lines.append("\n<b>Come impostare un filtro:</b>")
-            lines.append("<code>/filter [Numero o Nome] +inclusa -esclusa</code>")
-            lines.append("<i>Esempio con numero:</i> <code>/filter 1 +Python -Crypto</code>")
-            lines.append("<i>Esempio con nome:</i> <code>/filter \"TechNews\" +Python -Crypto</code>")
-            lines.append("<i>Per azzerare:</i> <code>/filter 1 reset</code>")
+            lines.append("\n<b>How to set a filter:</b>")
+            lines.append("<code>/filter [Number or Name] +include -exclude</code>")
+            lines.append("<i>Example with number:</i> <code>/filter 1 +Python -Crypto</code>")
+            lines.append("<i>Example with name:</i> <code>/filter \"TechNews\" +Python -Crypto</code>")
+            lines.append("<i>To reset:</i> <code>/filter 1 reset</code>")
             await msg.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
@@ -744,7 +766,7 @@ class Feedergraph(object):
         target_alias = None
         rules = ""
 
-        # Supporto selezione per numero indice
+        # Support selection by index number
         parts = rest.split(maxsplit=1)
         if parts[0].isdigit():
             idx = int(parts[0]) - 1
@@ -759,7 +781,7 @@ class Feedergraph(object):
                 rules = rest[end_quote + 1:].strip()
 
         if target_alias is None:
-            # Match per prefisso alias esistente
+            # Match existing alias prefix
             for entry in entries:
                 alias = entry[1]
                 if rest.startswith(alias) or rest.lower().startswith(alias.lower()):
@@ -779,48 +801,48 @@ class Feedergraph(object):
         if updated:
             if rules:
                 await msg.reply_text(
-                    f"✅ Filtri aggiornati per <b>{html.escape(target_alias)}</b>:\n<code>{html.escape(rules)}</code>",
+                    f"✅ Filters updated for <b>{html.escape(target_alias)}</b>:\n<code>{html.escape(rules)}</code>",
                     parse_mode="HTML",
                 )
             else:
                 await msg.reply_text(
-                    f"✅ Filtri rimossi per <b>{html.escape(target_alias)}</b>. Riceverai tutti gli articoli.",
+                    f"✅ Filters removed for <b>{html.escape(target_alias)}</b>. You will receive all articles.",
                     parse_mode="HTML",
                 )
         else:
             await msg.reply_text(
-                f"❌ Nessun feed trovato con il nome <b>{html.escape(target_alias)}</b>. Controlla con <b>/list</b> o <b>/filter</b>.",
+                f"❌ No feed found with the name <b>{html.escape(target_alias)}</b>. Check with <b>/list</b> or <b>/filter</b>.",
                 parse_mode="HTML",
             )
 
     async def channel_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Istruzioni per inoltrare notifiche su canali e gruppi Telegram"""
+        """Instructions to forward notifications to Telegram channels and groups"""
         msg = (
-            f"{bip_bop()} <b>Inoltro Notifiche su Canali e Gruppi</b>\n\n"
-            "Per pubblicare le notizie in un canale o gruppo:\n\n"
-            "1️⃣ Aggiungi questo bot come <b>Amministratore</b> nel tuo canale o gruppo.\n"
-            "2️⃣ Invia il comando <code>/add</code> direttamente dentro il canale/gruppo!\n"
-            "   <i>Esempio:</i> <code>/add https://duccio.me/rss TechNews</code>\n\n"
-            "Il bot invierà automaticamente tutti i nuovi articoli lì! 🚀"
+            f"{bip_bop()} <b>Forward Notifications to Channels & Groups</b>\n\n"
+            "To publish news to a channel or group:\n\n"
+            "1️⃣ Add this bot as an <b>Administrator</b> in your channel or group.\n"
+            "2️⃣ Send the <code>/add</code> command directly inside the channel/group!\n"
+            "   <i>Example:</i> <code>/add https://duccio.me/rss TechNews</code>\n\n"
+            "The bot will automatically post all new articles there! 🚀"
         )
         await update.effective_message.reply_text(msg, parse_mode="HTML")
 
     async def handle_tldr(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Genera e applica il TL;DR modificando direttamente il messaggio della notizia"""
+        """Generates and applies TL;DR by editing the feed message in-place"""
         query = update.callback_query
         if query is not None:
-            await query.answer("Generazione sintesi in corso...")
+            await query.answer("Generating summary...")
             data = query.data
             link = data.get("link", "")
             title = data.get("title", "")
             alias = data.get("alias", "Feed")
 
             summary = summarize_article(link, title=title)
-            safe_title = html.escape(str(title).strip() if title else "Articolo")
+            safe_title = html.escape(str(title).strip() if title else "Article")
             safe_alias = html.escape(str(alias).strip())
             safe_summary = html.escape(summary)
 
-            # Modifica il messaggio in-place aggiungendo la sintesi
+            # Edit message in-place adding summary
             msg = (
                 f"<b>{safe_alias}</b>\n"
                 f"<a href='{link}'><b>{safe_title}</b></a>\n\n"
@@ -828,7 +850,7 @@ class Feedergraph(object):
                 f"<i>{safe_summary}</i>"
             )
 
-            # Rimuove il pulsante TL;DR dalla tastiera mantenendo il cambio link
+            # Remove TL;DR button from keyboard while keeping link toggle
             new_keyboard = []
             if query.message and query.message.reply_markup:
                 for row in query.message.reply_markup.inline_keyboard:
@@ -847,7 +869,7 @@ class Feedergraph(object):
                     link_preview_options=LinkPreviewOptions(prefer_small_media=True),
                 )
             except Exception as e:
-                logger.warning("Impossibile modificare il messaggio in handle_tldr: %s", e)
+                logger.warning("Unable to edit message in handle_tldr: %s", e)
                 await query.message.reply_text(
                     text=msg,
                     parse_mode="HTML",
@@ -855,11 +877,11 @@ class Feedergraph(object):
                 )
 
     async def explore_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Mostra il catalogo dei feed consigliati divisi per categoria"""
+        """Shows popular feeds catalog categorized by topic"""
         msg = update.effective_message
         text = (
-            f"{bip_bop()} <b>Esplora Feed Popolari</b>\n\n"
-            "Seleziona una categoria per scoprire e aggiungere feed popolari con un click:"
+            f"{bip_bop()} <b>Explore Popular Feeds</b>\n\n"
+            "Select a category to discover and add popular feeds with one click:"
         )
         await msg.reply_text(
             text=text,
@@ -868,7 +890,7 @@ class Feedergraph(object):
         )
 
     async def handle_explore_category(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Mostra i feed di una determinata categoria nel catalogo preset"""
+        """Shows feeds for a specific category in preset catalog"""
         query = update.callback_query
         if query is not None:
             await query.answer()
@@ -881,13 +903,13 @@ class Feedergraph(object):
             )
 
     async def handle_explore_categories(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Torna alla lista delle categorie del catalogo preset"""
+        """Returns to preset categories list"""
         query = update.callback_query
         if query is not None:
             await query.answer()
             text = (
-                f"{bip_bop()} <b>Esplora Feed Popolari</b>\n\n"
-                "Seleziona una categoria per scoprire e aggiungere feed popolari con un click:"
+                f"{bip_bop()} <b>Explore Popular Feeds</b>\n\n"
+                "Select a category to discover and add popular feeds with one click:"
             )
             await query.edit_message_text(
                 text=text,
@@ -896,7 +918,7 @@ class Feedergraph(object):
             )
 
     async def handle_add_preset(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Aggiunge un feed preset selezionato con un click"""
+        """Adds selected preset feed with one click"""
         query = update.callback_query
         if query is not None:
             await query.answer()
@@ -909,7 +931,7 @@ class Feedergraph(object):
             user_entries = self.db.get_urls_for_user(telegram_id=chat_id)
             if any(url == entry[0] for entry in user_entries):
                 await query.message.reply_text(
-                    f"Hai già iscritto <b>{html.escape(name)}</b> nelle tue sottoscrizioni!",
+                    f"You are already subscribed to <b>{html.escape(name)}</b>!",
                     parse_mode="HTML",
                 )
                 return
@@ -932,13 +954,57 @@ class Feedergraph(object):
                 ]
             ]
             await query.message.reply_text(
-                f"🎉 Aggiunto con successo: <b>{html.escape(alias)}</b>!\n"
-                f"Riceverai automaticamente le notifiche dei nuovi articoli.",
+                f"🎉 Successfully added: <b>{html.escape(alias)}</b>!\n"
+                f"You will automatically receive notifications for new articles.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
 
+    async def handle_menu_text(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handles actions from reply keyboard menu buttons or direct URL input"""
+        text = (update.effective_message.text or "").strip()
+        if not text:
+            return
+
+        if text in ["📖 My Feeds", "My Feeds", "📖 I Miei Feed", "I Miei Feed"]:
+            await self.list(update, context)
+        elif text in ["🔍 Explore Feeds", "Explore Feeds", "🔍 Esplora Feed", "Esplora Feed"]:
+            await self.explore_command(update, context)
+        elif text in ["➕ Add Feed", "Add Feed", "➕ Aggiungi Feed", "Aggiungi Feed"]:
+            msg = (
+                f"{bip_bop()} <b>How to add a Feed:</b>\n\n"
+                "1️⃣ <b>Paste any link:</b> send the URL of any website, blog, or RSS feed directly in this chat!\n"
+                "<i>(Example: <code>https://theverge.com</code>)</i>\n\n"
+                "2️⃣ <b>Social & Media:</b>\n"
+                "• YouTube: <code>/youtube @channelname</code>\n"
+                "• Reddit: <code>/reddit r/subreddit_name</code>\n"
+                "• X / Twitter: <code>/x @username</code>\n\n"
+                "3️⃣ Or use <b>/add</b> with a custom name:\n"
+                "<code>/add https://duccio.me/rss My Blog</code>"
+            )
+            await update.effective_message.reply_text(msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
+        elif text in ["📥 Get Feeds", "Get Feeds", "📥 Scarica Notizie", "Scarica Notizie"]:
+            await self.get(update, context)
+        elif text in ["🗑️ Remove Feed", "Remove Feed", "🗑️ Rimuovi Feed", "Rimuovi Feed"]:
+            await self.remove(update, context)
+        elif text in ["⚙️ Keyword Filters", "Keyword Filters", "⚙️ Filtri Parole", "Filtri Parole"]:
+            await self.filter_command(update, context)
+        elif text in ["💾 Backup & OPML", "Backup & OPML"]:
+            msg = (
+                f"{bip_bop()} <b>Backup & OPML Management</b>\n\n"
+                "• To <b>export</b> all your feeds in standard OPML format use <code>/export</code>\n"
+                "• To <b>import</b> an OPML file send the <code>.opml</code> or <code>.xml</code> file directly in this chat!"
+            )
+            await update.effective_message.reply_text(msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
+        elif text in ["❓ Help & Info", "Help & Info", "❓ Aiuto & Info", "Aiuto & Info"]:
+            await self.help(update, context)
+        elif text.startswith("http://") or text.startswith("https://"):
+            # User pasted a URL directly: add with auto-discovery
+            context.args = text.split()
+            await self.add(update, context)
+
 
 if __name__ == "__main__":
     Feedergraph(telegram_token=TELEGRAM_TOKEN, update_interval=UPDATE_INTERVAL)
+
 

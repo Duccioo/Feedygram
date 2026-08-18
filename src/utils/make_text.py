@@ -7,13 +7,13 @@ EMOJIS = [
 
 
 def random_emoji() -> str:
-    """Restituisce un'emoji casuale sicura e universalmente renderizzabile."""
+    """Returns a safe, universally renderable random emoji."""
     return random.choice(EMOJIS)
 
 
 def number_to_emoji(number: int | str) -> str:
-    """Converte un numero in una sequenza di emoji numeriche."""
-    legenda = {
+    """Converts a number into a sequence of numeric emojis."""
+    legend = {
         "0": "0️⃣",
         "1": "1️⃣",
         "2": "2️⃣",
@@ -25,11 +25,11 @@ def number_to_emoji(number: int | str) -> str:
         "8": "8️⃣",
         "9": "9️⃣",
     }
-    return "".join(legenda.get(c, c) + " " for c in str(number)).strip()
+    return "".join(legend.get(c, c) + " " for c in str(number)).strip()
 
 
 def bip_bop() -> str:
-    """Restituisce una stringa robotica casuale per i messaggi del bot."""
+    """Returns a random robotic bleep string for bot messages."""
     return random.choice([
         " BIP BOP ",
         " BOP PIP ",
@@ -37,3 +37,4 @@ def bip_bop() -> str:
         " BI BI BIP ",
         " PIP BUP ",
     ])
+
