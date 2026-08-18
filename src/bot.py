@@ -806,7 +806,7 @@ class Feedergraph(object):
         await update.effective_message.reply_text(msg, parse_mode="HTML")
 
     async def handle_tldr(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Genera e invia il TL;DR per un articolo selezionato"""
+        """Genera e applica il TL;DR modificando direttamente il messaggio della notizia"""
         query = update.callback_query
         if query is not None:
             await query.answer("Generazione sintesi in corso...")
@@ -818,18 +818,41 @@ class Feedergraph(object):
             summary = summarize_article(link, title=title)
             safe_title = html.escape(str(title).strip() if title else "Articolo")
             safe_alias = html.escape(str(alias).strip())
+            safe_summary = html.escape(summary)
 
+            # Modifica il messaggio in-place aggiungendo la sintesi
             msg = (
-                f"📝 <b>TL;DR Sintesi</b> [ {safe_alias} ]\n"
+                f"<b>{safe_alias}</b>\n"
                 f"<a href='{link}'><b>{safe_title}</b></a>\n\n"
-                f"{html.escape(summary)}"
+                f"📝 <b>TL;DR:</b>\n"
+                f"<i>{safe_summary}</i>"
             )
 
-            await query.message.reply_text(
-                text=msg,
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
+            # Rimuove il pulsante TL;DR dalla tastiera mantenendo il cambio link
+            new_keyboard = []
+            if query.message and query.message.reply_markup:
+                for row in query.message.reply_markup.inline_keyboard:
+                    filtered_row = [
+                        btn for btn in row
+                        if getattr(btn, "callback_data", None) and isinstance(btn.callback_data, dict) and btn.callback_data.get("option") != "get_tldr"
+                    ]
+                    if filtered_row:
+                        new_keyboard.append(filtered_row)
+
+            try:
+                await query.edit_message_text(
+                    text=msg,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(new_keyboard) if new_keyboard else None,
+                    link_preview_options=LinkPreviewOptions(prefer_small_media=True),
+                )
+            except Exception as e:
+                logger.warning("Impossibile modificare il messaggio in handle_tldr: %s", e)
+                await query.message.reply_text(
+                    text=msg,
+                    parse_mode="HTML",
+                    link_preview_options=LinkPreviewOptions(is_disabled=True),
+                )
 
     async def explore_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra il catalogo dei feed consigliati divisi per categoria"""
