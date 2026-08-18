@@ -39,11 +39,19 @@ class DatabaseHandler:
         """Applica modifiche allo schema per database già esistenti"""
         try:
             with self._get_connection() as conn:
+                # Migrazione web_user (filter_rules)
                 cursor = conn.execute("PRAGMA table_info(web_user)")
-                columns = [row[1] for row in cursor.fetchall()]
-                if "filter_rules" not in columns:
+                columns_wu = [row[1] for row in cursor.fetchall()]
+                if "filter_rules" not in columns_wu:
                     conn.execute("ALTER TABLE web_user ADD COLUMN filter_rules TEXT DEFAULT ''")
                     logger.info("Aggiunta colonna filter_rules a web_user")
+
+                # Migrazione web (last_entry_id)
+                cursor = conn.execute("PRAGMA table_info(web)")
+                columns_w = [row[1] for row in cursor.fetchall()]
+                if "last_entry_id" not in columns_w:
+                    conn.execute("ALTER TABLE web ADD COLUMN last_entry_id TEXT")
+                    logger.info("Aggiunta colonna last_entry_id a web")
         except Exception as e:
             logger.warning("Migrazione schema database: %s", e)
 
