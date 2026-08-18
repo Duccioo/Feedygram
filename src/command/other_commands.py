@@ -1,3 +1,4 @@
+import html
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # -----
@@ -5,23 +6,20 @@ from utils.make_text import number_to_emoji, random_emoji
 
 
 def list_handler(db_telegraph, alias, url, index):
-    if db_telegraph == True:
-        new_link = "✳️Normal Link✳️k"
+    if db_telegraph:
+        new_link = "✳️Normal Link✳️"
         old_link = "🤙Telegraph Link🤙"
     else:
         new_link = "🤙Telegraph Link🤙"
         old_link = "✳️Normal Link✳️"
 
+    safe_alias = html.escape(str(alias))
+    safe_url = html.escape(str(url))
+
     message = (
-        number_to_emoji(str(index + 1))
-        + ": '"
-        + alias
-        + "'\nLink: <code>"
-        + url
-        + "</code>"
-        + "\nDefault link type: <b>"
-        + old_link
-        + "</b>"
+        f"{number_to_emoji(str(index + 1))}: '<b>{safe_alias}</b>'\n"
+        f"Link: <code>{safe_url}</code>\n"
+        f"Default link type: <b>{old_link}</b>"
     )
     keyboard = [
         [
@@ -31,7 +29,7 @@ def list_handler(db_telegraph, alias, url, index):
                     "option": "change_database",
                     "alias": alias,
                     "url": url,
-                    "set_telegraph": not db_telegraph,
+                    "set_telegraph": not bool(db_telegraph),
                 },
             )
         ],
@@ -42,38 +40,39 @@ def list_handler(db_telegraph, alias, url, index):
 def help_message():
     return (
         "Need help? No Problem!!\n<b>QUICK START:</b>\n\n"
-        + "*️⃣For add new RSS url type: <code>/add *your_RSS_url*</code>\n<i>(optional)</i> if you want to give a name for that entry try: <code>/add *your_RSS_url* *name_of_entry*</code>\n\n"
-        + "*️⃣For remove a feed type <code>/remove</code> and then click the target feed\n\n"
-        + "*️⃣For change the default link type try <code>/list</code> then click the button below of your target link\n\n"
-        + "*️⃣For get an instant article try to type <code>/get</code> then select your feed and then select how many articles do you want to receive!\n\n"
-        + "*️⃣If you want to know more about this bot try <code>/about</code>"
+        "1️⃣ To add a new feed or website: <code>/add https://example.com</code>\n"
+        "<i>(Optional)</i> Add a custom name: <code>/add https://example.com My Blog</code>\n"
+        "<i>(Tip: Paste any website URL and Feedygram will auto-discover the RSS feed!)</i>\n\n"
+        "2️⃣ To explore popular recommended feeds: <code>/explore</code>\n\n"
+        "3️⃣ To follow Social / Media directly:\n"
+        "• YouTube: <code>/youtube @channel</code>\n"
+        "• Twitter / X: <code>/x @username</code>\n"
+        "• Reddit: <code>/reddit r/technology</code>\n\n"
+        "4️⃣ To filter by keywords: <code>/filter</code> (e.g. <code>/filter 1 +python -crypto</code>)\n\n"
+        "5️⃣ To remove a feed: <code>/remove</code>\n\n"
+        "6️⃣ To view and customize link types: <code>/list</code>\n\n"
+        "7️⃣ To fetch recent articles on demand: <code>/get</code>\n\n"
+        "8️⃣ To backup / restore subscriptions: <code>/export</code> & <code>/import</code>\n\n"
+        "9️⃣ To use in Channels & Groups: <code>/channel</code>\n\n"
+        "🔟 For bot info: <code>/about</code>"
     )
 
 
-def stop_handler(db, telegram_user):
+def stop_handler(telegram_user, db):
     db.update_user(telegram_id=telegram_user.id, is_active=0)
-    return "Oh.. Okay, I will not send you any more news updates! If you change your mind and you want to receive messages from me again use <code>/start</code> command again!"
+    return "Oh.. Okay, I will not send you any more news updates! If you change your mind and you want to receive messages from me again use the <code>/start</code> command!"
 
 
-def about_message(number):
-
-    # try:
-    #     _number = number[0][0]
-    # except:
-    #     _number = number[0]
-
+def about_message(number: int):
     message = (
-        "Hi🙃! Hope you are finding this bot useful,\nif so then spread the word and tell your friends about <a href='https://t.me/feedygram_bot'>🐕Feedygram</a>!!\n"
-        + "For more info check the  <a href='https://github.com/Duccioo/Feedygram'>github page.</a>\n"
-        "\nThis bot was made with passion by "
-        + random_emoji()
-        + "Duccio Meconcelli (@Dosium).\n\nBased on the <a href='https://github.com/hamitdurmus/robotrss'>RobotRSS by hamitdurmus. </a>\n"
-        + "The telegraph <a href='https://github.com/NullPointerMaker/webpage2telegraph'>webpage converter library</a> was made by <a href='https://github.com/NullPointerMaker'>NullPointerMaker</a> \n\n"
-        + "For other stuff I made check my GitHub: <a href='https://duccio.me/'>Duccioo</a>\n"
-        + "And if you have any feedback, please reach out to me at meconcelliduccio@gmail.com or visit my website <a href='https://duccio.me/'>duccio.me</a>\n"
-        + "<i>🐶Bau Bau🐶</i>"
-        + "\n\nThere are currently "
-        + str(number_to_emoji(number))
-        + "active users\n"
+        "Hi🙃! Hope you are finding this bot useful,\n"
+        "if so then spread the word and tell your friends about <a href='https://t.me/feedygram_bot'>🐕Feedygram</a>!!\n\n"
+        "For more info check the <a href='https://github.com/Duccioo/Feedygram'>GitHub page</a>.\n\n"
+        f"This bot was made with passion by {random_emoji()} Duccio Meconcelli (@Dosium).\n"
+        "Based on <a href='https://github.com/hamitdurmus/robotrss'>RobotRSS by hamitdurmus</a>.\n\n"
+        "For feedback: meconcelliduccio@gmail.com | <a href='https://duccio.me/'>duccio.me</a>\n"
+        "<i>🐶Bau Bau🐶</i>\n\n"
+        f"There are currently {number_to_emoji(number)} active users\n"
     )
     return message
+

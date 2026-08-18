@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 docker-compose.yaml
-
+/.agents
 /v_feedergraph
 
 # C extensions

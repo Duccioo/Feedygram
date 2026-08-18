@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS web_user (
     telegram_id INTEGER,
     alias TEXT NOT NULL,
     telegraph INTEGER DEFAULT 0,
+    filter_rules TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (url, telegram_id),
     FOREIGN KEY(url) REFERENCES web(url) ON DELETE CASCADE,

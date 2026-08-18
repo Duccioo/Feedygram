@@ -13,13 +13,16 @@ as support for receiving **Telegraph links**
 
 ## Features
 
-- Easy to use
-- Save your favorite RSS url
-- Get **instant** feed from saved url
+- **RSS Auto-Discovery:** Simply send any website homepage URL (e.g. `https://theverge.com` or `https://ansa.it`), and Feedygram automatically detects and links the RSS/Atom feed
+- **Curated Feeds Catalog (`/explore`):** One-click subscriptions to top popular feeds across Tech, News, Gaming, and Science
+- **Social & Media Resolvers:** Track YouTube (`/youtube @channel`), Reddit (`/reddit r/tech`), and Twitter/X (`/x @username`) natively
+- **Modular Feed Provider Architecture:** Connect to local RSS feeds or external feed engines like [Lion Reader](https://github.com/brendanlong/lion-reader) and custom REST APIs
+- **Keyword Filters:** Include (`+keyword`) and exclude (`-keyword`) specific topics per feed with `/filter`
+- **OPML Import / Export:** Backup and restore all subscriptions with `/export` and `/import`
+- **Channel & Group Broadcasting:** Forward news directly to Telegram channels and groups (`/channel`)
+- **Instant TL;DR Summaries:** Ultra-lightweight extractive AI summaries with a single click on `📝 TL;DR`
 - **Convert URL to support instant view (Telegraph)**
-- SQLite implementation
-- Automatically assign a name to the url
-- Support to run with RaspberryPi
+- **SQLite implementation** with foreign-key cascade integrity
 
 
 ## Run Locally
@@ -55,26 +58,32 @@ Start the bot
 
 ## Environment Variables
 
-To run this project, you will need to add the following environment variables to your *.env* file
+To run this project, add the following environment variables to your `.env` file:
 
-`TELEGRAM_TOKEN` --> Your Telegram bot token from [BotFather](https://t.me/BotFather)
-
-`UPDATE_INTERVAL` --> How much time must pass before updating the feed (in seconds)
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `TELEGRAM_TOKEN` | Your Telegram bot token from [BotFather](https://t.me/BotFather) | *Required* |
+| `UPDATE_INTERVAL` | Polling interval in seconds | `300` |
+| `FEED_PROVIDER` | Feed backend provider (`local`, `lion_reader`, `rest`) | `local` |
+| `FEED_API_URL` | Base URL for external API backend (e.g. `http://localhost:3000`) | `http://localhost:3000` |
+| `FEED_API_KEY` | *(Optional)* Bearer token or API key for external backend | `None` |
+| `TWITTER_RSS_BRIDGE` | *(Optional)* Custom template or base URL for X/Twitter RSS bridge | `https://nitter.net/{username}/rss` |
 
 
 ## Docker
 
 You can pull Feedygram from DockerHub with :
 
-```
-docker push duccioo/feedergraph
+```bash
+docker pull duccioo/feedergraph
 ```
 
 If you have a RaspberryPi then:
 
+```bash
+docker pull duccioo/feedergraph:raspberrypi
 ```
-docker push duccioo/feedergraph:raspberrypi
-```
+
 
 And for run it I recommend to use docker-compose:
 

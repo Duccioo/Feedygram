@@ -1,14 +1,14 @@
 import sqlite3
 import logging
 import os
-from typing import Optional, List, Tuple
+from pathlib import Path
+from typing import Optional, List, Tuple, Any
 from urllib.parse import urlparse
 from datetime import datetime
+from contextlib import contextmanager
 
 # ---
-from utils.filehandler import FileHandler
 from utils.datehandler import DateHandler as dh
-from utils.feedhandler import FeedHandler
 
 # Configurazione logging
 logger = logging.getLogger(__name__)
@@ -16,18 +16,36 @@ logger = logging.getLogger(__name__)
 
 class DatabaseHandler:
     def __init__(self, *database_path: str):
-        self.filehandler = FileHandler(relative_root_path="..")
-        self.database_path = self.filehandler.join_path(*database_path)
+        base_dir = Path(__file__).resolve().parent.parent
+        self.database_path = str(base_dir.joinpath(*database_path))
         logger.info("Database path: %s", self.database_path)
 
         self._init_database()
         self._enable_foreign_keys()
 
     def _init_database(self) -> None:
-        """Inizializza il database se non esiste"""
-        if not self.filehandler.file_exists(self.database_path):
+        """Inizializza il database se non esiste ed esegue migrazioni necessarie"""
+        db_dir = os.path.dirname(self.database_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
+        if not os.path.exists(self.database_path):
             logger.info("Creazione nuovo database: %s", self.database_path)
             self._execute_schema_script()
+        else:
+            self._run_migrations()
+
+    def _run_migrations(self) -> None:
+        """Applica modifiche allo schema per database già esistenti"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute("PRAGMA table_info(web_user)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if "filter_rules" not in columns:
+                    conn.execute("ALTER TABLE web_user ADD COLUMN filter_rules TEXT DEFAULT ''")
+                    logger.info("Aggiunta colonna filter_rules a web_user")
+        except Exception as e:
+            logger.warning("Migrazione schema database: %s", e)
 
     def _enable_foreign_keys(self) -> None:
         """Abilita i vincoli di foreign key"""
@@ -36,11 +54,10 @@ class DatabaseHandler:
 
     def _execute_schema_script(self) -> None:
         """Esegue lo script di inizializzazione del database"""
-
-        schema_file = os.path.join("database", "setup.sql")
+        schema_file = Path(__file__).resolve().parent.parent / "database" / "setup.sql"
 
         try:
-            with self.filehandler.open_file(schema_file) as f:
+            with open(schema_file, "r", encoding="utf-8") as f:
                 schema = f.read()
 
             with self._get_connection() as conn:
@@ -51,54 +68,61 @@ class DatabaseHandler:
             logger.error("Errore nell'inizializzazione del database: %s", str(e))
             raise RuntimeError("Impossibile inizializzare il database") from e
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """Restituisce una connessione al database"""
-        return sqlite3.connect(self.database_path, check_same_thread=False)
+    @contextmanager
+    def _get_connection(self):
+        """Restituisce una connessione al database garantendone commit e chiusura"""
+        conn = sqlite3.connect(self.database_path, check_same_thread=False)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
-    def get_all_feeds(self) -> List[Tuple[str, datetime, str, Optional[str]]]:
-        """Restituisce tutti i feed attivi con metadati completi"""
+    def get_all_feeds(self) -> List[Tuple[str, Any, str, Optional[str]]]:
+        """Restituisce tutti i feed con iscritti attivi"""
         query = """
-            SELECT w.url, w.last_updated, w.last_title, w.last_entry_id, MIN(wu.alias)
+            SELECT DISTINCT w.url, w.last_updated, w.last_title, w.last_entry_id
             FROM web w
             JOIN web_user wu ON w.url = wu.url
-            GROUP BY w.url
+            JOIN user u ON wu.telegram_id = u.telegram_id
+            WHERE u.is_active = 1
         """
         with self._get_connection() as conn:
             cursor = conn.execute(query)
             return cursor.fetchall()
 
-    def get_active_users_for_feed(self, url: str) -> List[Tuple[int, bool]]:
-        """Restituisce gli ID utente attivi e preferenze Telegraph per un feed"""
+    def get_active_users_for_feed(self, url: str) -> List[Tuple[int, bool, str, str]]:
+        """Restituisce gli ID utente attivi, preferenza Telegraph, alias e regole di filtro per un feed"""
         query = """
-            SELECT wu.telegram_id, wu.telegraph
+            SELECT wu.telegram_id, wu.telegraph, wu.alias, COALESCE(wu.filter_rules, '')
             FROM web_user wu
             JOIN user u ON wu.telegram_id = u.telegram_id
             WHERE wu.url = ? AND u.is_active = 1
         """
         with self._get_connection() as conn:
             cursor = conn.execute(query, (url,))
-            return [(row[0], bool(row[1])) for row in cursor.fetchall()]
+            return [(row[0], bool(row[1]), str(row[2]), str(row[3])) for row in cursor.fetchall()]
 
-    def update_feed(self, url: str, last_updated: datetime, last_title: str, last_entry_id: str) -> None:
+    def update_feed(self, url: str, last_updated: Any, last_title: str, last_entry_id: Optional[str]) -> None:
         """Aggiorna i metadati di un feed, incluso l'ID dell'ultimo entry."""
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE web SET last_updated = ?, last_title = ?, last_entry_id = ? WHERE url = ?",
-                (last_updated, last_title, last_entry_id, url),
+                (str(last_updated), last_title, last_entry_id, url),
             )
 
     # Metodi per la gestione degli utenti
     def add_user(
         self,
         telegram_id: int,
-        username: str,
+        username: Optional[str],
         firstname: str,
-        lastname: str,
-        language_code: str,
+        lastname: Optional[str],
+        language_code: Optional[str],
         is_bot: bool,
         is_active: bool = True,
     ) -> None:
-        """Aggiunge un utente al database"""
+        """Aggiunge o aggiorna un utente al database"""
         query = """
             INSERT INTO user (telegram_id, username, firstname, lastname, 
                             language, is_bot, is_active)
@@ -152,7 +176,6 @@ class DatabaseHandler:
         with self._get_connection() as conn:
             cursor = conn.execute(query, (telegram_id,))
             return cursor.fetchone()
-        # Metodi utente migliorati
 
     def deactivate_user(self, telegram_id: int) -> None:
         """Disattiva un utente"""
@@ -172,7 +195,7 @@ class DatabaseHandler:
             VALUES (?, ?, ?, ?)
             ON CONFLICT(url) DO NOTHING
         """
-        params = (url, "", dh.parse_datetime("01-05-1999"), None)
+        params = (url, "", str(dh.parse_datetime("01-05-1999")), None)
 
         with self._get_connection() as conn:
             conn.execute(query, params)
@@ -217,8 +240,18 @@ class DatabaseHandler:
     def add_user_bookmark(
         self, telegram_id: int, url: str, alias: str, telegraph: bool = False
     ) -> None:
-        """Aggiunge un bookmark per un utente"""
-        # self._validate_alias(alias)
+        """Aggiunge un bookmark per un utente, assicurando che l'utente esista nel database"""
+        # Assicura che l'utente esista per evitare violazioni di foreign key
+        if not self.get_user(telegram_id):
+            self.add_user(
+                telegram_id=telegram_id,
+                username=None,
+                firstname="User",
+                lastname=None,
+                language_code=None,
+                is_bot=False,
+                is_active=True,
+            )
 
         try:
             self.add_url(url)
@@ -232,7 +265,7 @@ class DatabaseHandler:
                 alias = excluded.alias,
                 telegraph = excluded.telegraph
         """
-        params = (url, telegram_id, alias, int(telegraph))
+        params = (url, telegram_id, str(alias).strip(), int(telegraph))
 
         with self._get_connection() as conn:
             conn.execute(query, params)
@@ -255,9 +288,8 @@ class DatabaseHandler:
     ) -> None:
         """Aggiorna un bookmark esistente"""
         updates = {}
-        if alias:
-            # self._validate_alias(alias)
-            updates["alias"] = alias
+        if alias is not None:
+            updates["alias"] = alias.strip()
         if telegraph is not None:
             updates["telegraph"] = int(telegraph)
 
@@ -284,13 +316,13 @@ class DatabaseHandler:
             WHERE wu.telegram_id = ? AND wu.alias = ?
         """
         with self._get_connection() as conn:
-            cursor = conn.execute(query, (telegram_id, alias))
+            cursor = conn.execute(query, (telegram_id, str(alias).strip() if alias else ""))
             return cursor.fetchone()
 
     def get_urls_for_user(self, telegram_id: int) -> List[Tuple]:
-        """Restituisce tutti i bookmark di un utente"""
+        """Restituisce tutti i bookmark di un utente inclusi filtri e modalità link"""
         query = """
-            SELECT w.url, wu.alias, w.last_updated, w.last_title
+            SELECT w.url, wu.alias, w.last_updated, w.last_title, COALESCE(wu.filter_rules, ''), COALESCE(wu.telegraph, 0)
             FROM web_user wu
             JOIN web w ON wu.url = w.url
             WHERE wu.telegram_id = ?
@@ -298,6 +330,13 @@ class DatabaseHandler:
         with self._get_connection() as conn:
             cursor = conn.execute(query, (telegram_id,))
             return cursor.fetchall()
+
+    def update_user_bookmark_filter(self, telegram_id: int, alias: str, filter_rules: str) -> bool:
+        """Aggiorna le regole di filtro per un bookmark utente"""
+        query = "UPDATE web_user SET filter_rules = ? WHERE telegram_id = ? AND alias = ?"
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (str(filter_rules).strip(), telegram_id, str(alias).strip()))
+            return cursor.rowcount > 0
 
     def get_users_for_url(self, url: str) -> List[Tuple]:
         """Restituisce tutti gli utenti iscritti a un feed"""
@@ -328,13 +367,12 @@ class DatabaseHandler:
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
-        except ValueError:
+        except Exception:
             return False
 
     @staticmethod
     def _validate_alias(alias: str) -> None:
         """Valida il formato di un alias"""
-        if not 3 <= len(alias) <= 32:
-            raise ValueError("L'alias deve essere tra 3 e 32 caratteri")
-        if not alias.isalnum():
-            raise ValueError("L'alias può contenere solo lettere e numeri")
+        if not 1 <= len(alias) <= 64:
+            raise ValueError("L'alias deve essere tra 1 e 64 caratteri")
+
