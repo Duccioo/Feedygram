@@ -1,0 +1,36 @@
+name: Build and Push Multi-Arch Docker Image
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    name: Build Multi-Arch Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and Push Multi-Arch Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            duccioo/feedergraph:latest
+            duccioo/feedergraph:2.0
+            duccioo/feedergraph:raspberrypi

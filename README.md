@@ -72,36 +72,26 @@ To run this project, add the following environment variables to your `.env` file
 
 ## Docker
 
-You can pull Feedygram from DockerHub with :
+Feedygram provides a **Multi-Architecture Docker Image** supporting both **x86_64 (PC/Servers)** and **ARM64 (Raspberry Pi 3/4/5, Apple Silicon, VPS)** automatically:
 
 ```bash
-docker pull duccioo/feedergraph
+docker pull duccioo/feedergraph:latest
 ```
 
-If you have a RaspberryPi then:
+### Docker Compose
 
-```bash
-docker pull duccioo/feedergraph:raspberrypi
-```
-
-
-And for run it I recommend to use docker-compose:
-
-```
+```yaml
 version: "3"
 services:
   feedergraph:
-    image: duccioo/feedergraph:raspberrypi
+    image: duccioo/feedergraph:latest
     container_name: feedergraph
     volumes:
-      - *path_for_persistent_database*:/app/src/database/data
-
+      - ./database:/app/src/database/data
     environment:
-      - TELEGRAM_TOKEN=*your_telegram_bot_token*
-      - UPDATE_INTERVAL=*time_before_update_feed example:( 300 )* 
-
+      - TELEGRAM_TOKEN=your_telegram_bot_token
+      - UPDATE_INTERVAL=300
     restart: unless-stopped
-
 ```
 ## Demo
 
