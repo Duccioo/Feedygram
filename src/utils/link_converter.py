@@ -26,14 +26,17 @@ def _get_telegraph_poster():
 
 
 def _post_html_to_telegraph(title: str, html_content: str) -> Optional[str]:
-    """Pubblica contenuto HTML su Telegraph"""
+    """Pubblica contenuto HTML su Telegraph evitando l'upload di immagini su endpoint deprecati"""
     if not html_content or not html_content.strip():
         return None
     try:
         poster = _get_telegraph_poster()
         if poster:
             clean_title = (title or "News Update")[:128]
-            res = poster.post(title=clean_title, author="Feedygram", text=html_content)
+            try:
+                res = poster.post(title=clean_title, author="Feedygram", text=html_content, upload_images=False)
+            except TypeError:
+                res = poster.post(title=clean_title, author="Feedygram", text=html_content)
             if res and isinstance(res, dict) and "url" in res:
                 return str(res["url"])
     except Exception as e:

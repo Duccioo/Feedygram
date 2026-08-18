@@ -57,6 +57,54 @@ class TestDatabaseAndDate(unittest.TestCase):
         bookmarks = self.db.get_urls_for_user(user_id)
         self.assertEqual(bookmarks[0][4], "+python -crypto")
 
+    def test_legacy_database_auto_migration(self):
+        # Create a legacy SQLite database without last_entry_id and filter_rules
+        legacy_file = Path(self.temp_dir.name) / "legacy.db"
+        import sqlite3
+        conn = sqlite3.connect(str(legacy_file))
+        conn.executescript("""
+            CREATE TABLE user (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                firstname TEXT NOT NULL,
+                lastname TEXT,
+                language TEXT,
+                is_bot INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE web (
+                url TEXT PRIMARY KEY,
+                last_title TEXT NOT NULL,
+                last_updated TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE web_user (
+                url TEXT,
+                telegram_id INTEGER,
+                alias TEXT NOT NULL,
+                telegraph INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (url, telegram_id)
+            );
+            INSERT INTO user (telegram_id, firstname, is_active) VALUES (1, 'Test', 1);
+            INSERT INTO web (url, last_title, last_updated) VALUES ('https://duccio.me/rss', 'Old Title', '1999-01-01');
+            INSERT INTO web_user (url, telegram_id, alias) VALUES ('https://duccio.me/rss', 1, 'My Blog');
+        """)
+        conn.close()
+
+        # Opening with DatabaseHandler should auto-migrate without error
+        legacy_db = DatabaseHandler(str(legacy_file))
+        feeds = legacy_db.get_all_feeds()
+        self.assertEqual(len(feeds), 1)
+        self.assertEqual(feeds[0][0], "https://duccio.me/rss")
+        self.assertIsNone(feeds[0][3])  # last_entry_id migrated as NULL
+
+        # Test updating the feed with last_entry_id
+        legacy_db.update_feed("https://duccio.me/rss", "2026-08-18", "New Title", "guid-123")
+        feeds_updated = legacy_db.get_all_feeds()
+        self.assertEqual(feeds_updated[0][3], "guid-123")
+
 
 if __name__ == "__main__":
     unittest.main()
