@@ -75,6 +75,10 @@ class FeedHandler:
             return False, f"Feed format error: {feed.bozo_exception}"
 
         if not hasattr(feed, "entries") or len(feed.entries) == 0:
+            from utils.twitter import extract_twitter_username, validate_twitter_user
+            tw_user = extract_twitter_username(url)
+            if tw_user:
+                return validate_twitter_user(tw_user)
             return False, "The feed does not contain any entries."
 
         return True, None
@@ -84,6 +88,10 @@ class FeedHandler:
         """
         Automatically detects RSS/Atom/JSON feed endpoint from a generic website URL.
         """
+        from utils.twitter import extract_twitter_username
+        if extract_twitter_username(url):
+            return cls.format_url_string(url)
+
         formatted = cls.format_url_string(url)
         is_ok, _ = cls.is_parsable(formatted)
         if is_ok:
@@ -143,7 +151,14 @@ class FeedHandler:
         feed = cls.parse_feed(url)
         if feed and hasattr(feed, "feed") and getattr(feed.feed, "title", None):
             return feed.feed.title
+
+        from utils.twitter import extract_twitter_username, get_twitter_user_title
+        tw_user = extract_twitter_username(url)
+        if tw_user:
+            return get_twitter_user_title(tw_user)
+
         return None
+
 
     @staticmethod
     def get_entry_id(entry: Any) -> str:

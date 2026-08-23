@@ -315,14 +315,30 @@ class Feedergraph(object):
         reddit_feed_url = extract_reddit_target(parts[1])
 
         if twitter_user:
-            candidates = get_candidate_twitter_rss_urls(twitter_user)
-            arg_url = candidates[0]
-            for cand in candidates:
-                is_ok, _ = self.provider.validate_feed(cand)
-                if is_ok:
-                    arg_url = cand
-                    break
-            arg_entry = parts[2].strip() if len(parts) >= 3 else f"🐦 @{twitter_user}"
+            custom_bridge = os.environ.get("TWITTER_RSS_BRIDGE")
+            if custom_bridge:
+                candidates = get_candidate_twitter_rss_urls(twitter_user)
+                arg_url = candidates[0]
+            else:
+                arg_url = f"https://x.com/{twitter_user}"
+
+            is_parsable, error_message = self.provider.validate_feed(arg_url)
+            if not is_parsable:
+                safe_user = html.escape(parts[1])
+                safe_err = html.escape(str(error_message))
+                user_friendly_message = (
+                    f"{bip_bop()}Sorry! Could not find or access Twitter / X account <code>{safe_user}</code>.\n"
+                    f"<b>Reason:</b> {safe_err}\n\n"
+                    "Please check the username and try again."
+                )
+                await msg.reply_text(user_friendly_message, parse_mode="HTML")
+                return
+
+            if len(parts) >= 3:
+                arg_entry = parts[2].strip()
+            else:
+                tw_title = self.provider.get_feed_title(arg_url)
+                arg_entry = f"🐦 {tw_title.strip()}" if tw_title else f"🐦 @{twitter_user}"
         elif yt_feed_url:
             arg_url = yt_feed_url
             if len(parts) >= 3:

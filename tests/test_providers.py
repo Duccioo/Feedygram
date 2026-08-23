@@ -105,6 +105,34 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(items[0].title, "Local RSS Article")
         self.assertEqual(items[0].link, "https://example.com/rss1")
 
+    @patch("providers.local_rss.fetch_twitter_syndication_entries")
+    @patch("providers.local_rss.validate_twitter_user")
+    @patch("providers.local_rss.get_twitter_user_title")
+    def test_local_rss_twitter_routing(self, mock_title, mock_val, mock_fetch):
+        mock_val.return_value = (True, None)
+        mock_title.return_value = "Eric Migicovsky (@ericmigi)"
+        mock_fetch.return_value = [
+            FeedItem(
+                id="tweet-101",
+                title="Tweet test",
+                link="https://x.com/ericmigi/status/101",
+                source_link="https://fxtwitter.com/ericmigi/status/101",
+            )
+        ]
+
+        provider = LocalRSSProvider()
+        is_ok, _ = provider.validate_feed("@ericmigi")
+        self.assertTrue(is_ok)
+
+        title = provider.get_feed_title("https://x.com/ericmigi")
+        self.assertEqual(title, "Eric Migicovsky (@ericmigi)")
+
+        items = provider.fetch_entries("https://nitter.net/ericmigi/rss", limit=1)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].id, "tweet-101")
+        self.assertEqual(items[0].source_link, "https://fxtwitter.com/ericmigi/status/101")
+
 
 if __name__ == "__main__":
     unittest.main()
+

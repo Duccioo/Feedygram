@@ -1,22 +1,51 @@
 from typing import List, Tuple, Optional
 from utils.feedhandler import FeedHandler
 from utils.datehandler import DateHandler
+from utils.twitter import (
+    extract_twitter_username,
+    fetch_twitter_syndication_entries,
+    validate_twitter_user,
+    get_twitter_user_title,
+)
 from .base import BaseFeedProvider
 from .models import FeedItem
 
 
 class LocalRSSProvider(BaseFeedProvider):
     """
-    Default provider based on local feedparser.
+    Default provider based on local feedparser with native Twitter / X resolver.
     """
 
     def validate_feed(self, target: str) -> Tuple[bool, Optional[str]]:
+        twitter_user = extract_twitter_username(target)
+        if twitter_user:
+            is_ok, err = validate_twitter_user(twitter_user)
+            if is_ok:
+                return True, None
+            # Fallback to standard RSS check if custom bridge was provided
+            is_rss_ok, rss_err = FeedHandler.is_parsable(target)
+            if is_rss_ok:
+                return True, None
+            return False, err or rss_err
+
         return FeedHandler.is_parsable(target)
 
     def get_feed_title(self, target: str) -> Optional[str]:
+        twitter_user = extract_twitter_username(target)
+        if twitter_user:
+            tw_title = get_twitter_user_title(twitter_user)
+            if tw_title:
+                return tw_title
+
         return FeedHandler.get_feed_title(target)
 
     def fetch_entries(self, target: str, limit: int = 0) -> List[FeedItem]:
+        twitter_user = extract_twitter_username(target)
+        if twitter_user:
+            tw_items = fetch_twitter_syndication_entries(twitter_user, limit=limit)
+            if tw_items:
+                return tw_items
+
         raw_entries = FeedHandler.parse_N_entries(target, limit)
         if not raw_entries:
             return []
@@ -54,4 +83,5 @@ class LocalRSSProvider(BaseFeedProvider):
                 )
             )
         return items
+
 
