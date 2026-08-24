@@ -105,6 +105,22 @@ class TestDatabaseAndDate(unittest.TestCase):
         feeds_updated = legacy_db.get_all_feeds()
         self.assertEqual(feeds_updated[0][3], "guid-123")
 
+    def test_feed_history_recording_and_pruning(self):
+        url = "https://example.com/feed.xml"
+        self.db.add_url(url)
+
+        # Record 60 items
+        entry_ids = [f"item-{i}" for i in range(60)]
+        self.db.record_feed_entries(url, entry_ids, max_keep=50)
+
+        # Fetch recent IDs
+        recent = self.db.get_recent_entry_ids(url, limit=50)
+        self.assertEqual(len(recent), 50)
+        # item-59 was the last inserted, item-10 was the 50th from the end
+        self.assertIn("item-59", recent)
+        self.assertIn("item-10", recent)
+        self.assertNotIn("item-0", recent)  # Oldest pruned beyond 50
+
 
 if __name__ == "__main__":
     unittest.main()

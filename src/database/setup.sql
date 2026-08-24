@@ -32,5 +32,15 @@ CREATE TABLE IF NOT EXISTS web_user (
     FOREIGN KEY(telegram_id) REFERENCES user(telegram_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS feed_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(url) REFERENCES web(url) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_web_user_alias ON web_user(alias);
 CREATE INDEX IF NOT EXISTS idx_web_last_updated ON web(last_updated);
+CREATE INDEX IF NOT EXISTS idx_feed_history_url ON feed_history(url);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_history_url_entry ON feed_history(url, entry_id);

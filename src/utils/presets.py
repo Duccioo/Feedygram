@@ -6,7 +6,8 @@ PRESETS_DATA: Dict[str, List[Dict[str, str]]] = {
     "💻 Tech & Dev": [
         {"name": "Hacker News", "url": "https://news.ycombinator.com/rss"},
         {"name": "GitHub Trending Weekly", "url": "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_weekly.xml"},
-        {"name": "GitHub Trending Nuovi", "url": "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_weekly_new.xml"},
+        {"name": "GitHub Trending Nuovi (Weekly)", "url": "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_weekly_new.xml"},
+        {"name": "GitHub Trending Nuovi (Daily)", "url": "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_daily_new.xml"},
         {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
         {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index"},
     ],

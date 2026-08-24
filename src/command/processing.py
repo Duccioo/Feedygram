@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import traceback
-from typing import Optional, List
+from typing import Optional, List, Any, Set
 from telegram import LinkPreviewOptions
 from telegram.error import RetryAfter, TelegramError
 
@@ -64,7 +64,11 @@ class BatchProcess:
             if not entries:
                 return
 
-            new_entries = self._filter_new_entries(entries, last_entry_id)
+            recent_ids = set(self.db.get_recent_entry_ids(feed_url, limit=50))
+            if last_entry_id and not recent_ids:
+                recent_ids.add(str(last_entry_id))
+
+            new_entries = self._filter_new_entries(entries, recent_ids, last_entry_id)
 
             if not new_entries:
                 return
@@ -73,25 +77,45 @@ class BatchProcess:
             latest_entry = new_entries[0]
             self._update_feed_metadata(feed_url, latest_entry)
 
+            # Record up to 50 recent entry IDs in history to prevent duplicates
+            all_entry_ids = [str(e.id) for e in entries[:50]]
+            self.db.record_feed_entries(feed_url, all_entry_ids, max_keep=50)
+
         except Exception as e:
             logger.error(f"Error processing feed {feed_url}: {e}")
             traceback.print_exc()
 
-    def _filter_new_entries(self, entries: List[FeedItem], last_entry_id: Optional[str]) -> List[FeedItem]:
+    def _filter_new_entries(
+        self,
+        entries: List[FeedItem],
+        known_entry_ids: Optional[Any] = None,
+        last_entry_id: Optional[str] = None,
+    ) -> List[FeedItem]:
         """
-        Filters unread articles based on unique entry ID.
+        Filters unread articles based on known entry IDs window (up to 50 items) or last_entry_id.
         """
-        if not last_entry_id:
-            # First run or no ID saved: return all available articles
+        if isinstance(known_entry_ids, str):
+            known_ids_set = {known_entry_ids} if known_entry_ids else set()
+        elif isinstance(known_entry_ids, (set, list)):
+            known_ids_set = {str(eid) for eid in known_entry_ids if str(eid)}
+        else:
+            known_ids_set = set()
+
+        if last_entry_id:
+            known_ids_set.add(str(last_entry_id))
+
+        if not known_ids_set:
+            # First run or no history saved: return all available articles
             return entries
 
-        for i, entry in enumerate(entries):
-            if str(entry.id) == str(last_entry_id):
-                # Returns all articles newer than the previously processed one
-                return entries[:i]
+        new_items: List[FeedItem] = []
+        for entry in entries:
+            if str(entry.id) not in known_ids_set:
+                new_items.append(entry)
+            else:
+                break
 
-        # If previous ID is no longer in the feed window, return all available articles
-        return entries
+        return new_items
 
     async def _safe_fetch_entries(self, feed_url: str) -> Optional[List[FeedItem]]:
         """Fetches entries with error handling via the feed provider"""

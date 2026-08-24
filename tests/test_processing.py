@@ -98,6 +98,18 @@ class TestProcessing(unittest.TestCase):
         result = self.processor._filter_new_entries([], last_entry_id="item-1")
         self.assertEqual(result, [])
 
+    def test_filter_new_entries_with_known_ids_set(self):
+        """Articles matching any ID in the 50-item known_ids set should be skipped"""
+        items = [
+            FeedItem(id="item-3", title="Item 3", link="https://example.com/3"),
+            FeedItem(id="item-2", title="Item 2", link="https://example.com/2"),
+            FeedItem(id="item-1", title="Item 1", link="https://example.com/1"),
+        ]
+        known_ids = {"item-2", "item-1", "item-0"}
+        result = self.processor._filter_new_entries(items, known_entry_ids=known_ids)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, "item-3")
+
     def test_process_single_feed_new_subscription(self):
         """On new subscription (last_entry_id is None), all entries are notified and latest is saved"""
         import asyncio

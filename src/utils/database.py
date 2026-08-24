@@ -52,6 +52,21 @@ class DatabaseHandler:
                 if "last_entry_id" not in columns_w:
                     conn.execute("ALTER TABLE web ADD COLUMN last_entry_id TEXT")
                     logger.info("Added last_entry_id column to web")
+
+                # feed_history migration
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS feed_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        url TEXT NOT NULL,
+                        entry_id TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(url) REFERENCES web(url) ON DELETE CASCADE
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_feed_history_url ON feed_history(url)")
+                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_history_url_entry ON feed_history(url, entry_id)")
         except Exception as e:
             logger.warning("Database schema migration: %s", e)
 
@@ -117,6 +132,49 @@ class DatabaseHandler:
             conn.execute(
                 "UPDATE web SET last_updated = ?, last_title = ?, last_entry_id = ? WHERE url = ?",
                 (str(last_updated), last_title, last_entry_id, url),
+            )
+
+    def get_recent_entry_ids(self, url: str, limit: int = 50) -> List[str]:
+        """Returns the most recently recorded entry IDs for a feed up to limit (default 50)."""
+        query = """
+            SELECT entry_id
+            FROM feed_history
+            WHERE url = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, (url, limit))
+            return [row[0] for row in cursor.fetchall()]
+
+    def record_feed_entries(self, url: str, entry_ids: List[str], max_keep: int = 50) -> None:
+        """Records newly seen entry IDs for a feed and prunes older records beyond max_keep (default 50)."""
+        if not entry_ids:
+            return
+
+        with self._get_connection() as conn:
+            for eid in entry_ids:
+                conn.execute(
+                    """
+                    INSERT INTO feed_history (url, entry_id)
+                    VALUES (?, ?)
+                    ON CONFLICT(url, entry_id) DO UPDATE SET created_at = CURRENT_TIMESTAMP
+                    """,
+                    (url, str(eid)),
+                )
+
+            # Keep at least max_keep recent items per feed
+            conn.execute(
+                """
+                DELETE FROM feed_history
+                WHERE url = ? AND id NOT IN (
+                    SELECT id FROM feed_history
+                    WHERE url = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                )
+                """,
+                (url, url, max_keep),
             )
 
     # User management methods
