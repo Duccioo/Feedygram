@@ -6,6 +6,7 @@ from utils.twitter import (
     fetch_twitter_syndication_entries,
     validate_twitter_user,
     get_twitter_user_title,
+    get_candidate_twitter_rss_urls,
 )
 from .base import BaseFeedProvider
 from .models import FeedItem
@@ -13,7 +14,7 @@ from .models import FeedItem
 
 class LocalRSSProvider(BaseFeedProvider):
     """
-    Default provider based on local feedparser with native Twitter / X resolver.
+    Default provider based on local feedparser with native Twitter / X resolver and automatic bridge fallbacks.
     """
 
     def validate_feed(self, target: str) -> Tuple[bool, Optional[str]]:
@@ -22,11 +23,14 @@ class LocalRSSProvider(BaseFeedProvider):
             is_ok, err = validate_twitter_user(twitter_user)
             if is_ok:
                 return True, None
-            # Fallback to standard RSS check if custom bridge was provided
-            is_rss_ok, rss_err = FeedHandler.is_parsable(target)
-            if is_rss_ok:
-                return True, None
-            return False, err or rss_err
+            # Automatic fallback: test candidate RSS bridges
+            for candidate in get_candidate_twitter_rss_urls(twitter_user):
+                if "x.com" in candidate or "twitter.com" in candidate:
+                    continue
+                is_rss_ok, _ = FeedHandler.is_parsable(candidate)
+                if is_rss_ok:
+                    return True, None
+            return False, err
 
         return FeedHandler.is_parsable(target)
 
@@ -36,17 +40,34 @@ class LocalRSSProvider(BaseFeedProvider):
             tw_title = get_twitter_user_title(twitter_user)
             if tw_title:
                 return tw_title
+            for candidate in get_candidate_twitter_rss_urls(twitter_user):
+                if "x.com" in candidate or "twitter.com" in candidate:
+                    continue
+                cand_title = FeedHandler.get_feed_title(candidate)
+                if cand_title:
+                    return cand_title
 
         return FeedHandler.get_feed_title(target)
 
     def fetch_entries(self, target: str, limit: int = 0) -> List[FeedItem]:
+        raw_entries = None
         twitter_user = extract_twitter_username(target)
         if twitter_user:
             tw_items = fetch_twitter_syndication_entries(twitter_user, limit=limit)
             if tw_items:
                 return tw_items
 
-        raw_entries = FeedHandler.parse_N_entries(target, limit)
+            # Automatic fallback: try candidate RSS bridges if syndication fails
+            for candidate in get_candidate_twitter_rss_urls(twitter_user):
+                if "x.com" in candidate or "twitter.com" in candidate:
+                    continue
+                candidate_entries = FeedHandler.parse_N_entries(candidate, limit)
+                if candidate_entries:
+                    raw_entries = candidate_entries
+                    break
+        else:
+            raw_entries = FeedHandler.parse_N_entries(target, limit)
+
         if not raw_entries:
             return []
 
