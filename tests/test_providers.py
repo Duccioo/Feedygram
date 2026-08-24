@@ -132,6 +132,25 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(items[0].id, "tweet-101")
         self.assertEqual(items[0].source_link, "https://fxtwitter.com/ericmigi/status/101")
 
+    @patch("utils.feedhandler.FeedHandler.parse_N_entries")
+    @patch("utils.feedhandler.FeedHandler.get_entry_id")
+    def test_local_rss_summary_fallback_for_missing_title(self, mock_entry_id, mock_parse_n):
+        """When entry has no title (like Mastodon posts), summary clean text is used as title"""
+        mock_entry = MagicMock()
+        mock_entry.title = None
+        mock_entry.link = "https://mastodon.social/@user/123"
+        mock_entry.published = "2026-08-24"
+        mock_entry.summary = "<p>Hello world from <b>Mastodon</b>! #federation</p>"
+        mock_parse_n.return_value = [mock_entry]
+        mock_entry_id.return_value = "masto-123"
+
+        provider = LocalRSSProvider()
+        items = provider.fetch_entries("https://mastodon.social/@user.rss", limit=1)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].id, "masto-123")
+        self.assertEqual(items[0].title, "Hello world from Mastodon! #federation")
+
 
 if __name__ == "__main__":
     unittest.main()

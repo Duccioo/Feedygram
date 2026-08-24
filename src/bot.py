@@ -4,6 +4,7 @@ import html
 import random
 import pathlib
 import logging
+import asyncio
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 
@@ -289,7 +290,6 @@ class Feedergraph(object):
         chat_id = update.effective_chat.id
         msg = update.effective_message
         raw_text = msg.text.strip() if msg and msg.text else ""
-        parts = raw_text.split(maxsplit=2)
 
         example_list = [
             "🍕Best site for cooking Pizza🍕",
@@ -298,21 +298,31 @@ class Feedergraph(object):
             "📰Daily News",
         ]
 
-        if len(parts) < 2:
-            message = (
-                "Oh nono! I could not add the entry😯!\n"
-                + bip_bop()
-                + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
-                + "Try to send a valid URL like this:\n\n"
-                + f"<code>/add https://duccio.me/rss {random.choice(example_list)}</code>"
-            )
-            await msg.reply_text(message, parse_mode="HTML")
-            return
+        if raw_text.startswith("/"):
+            parts = raw_text.split(maxsplit=2)
+            if len(parts) < 2 or not parts[1].strip():
+                message = (
+                    "Oh nono! I could not add the entry😯!\n"
+                    + bip_bop()
+                    + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
+                    + "Try to send a valid URL like this:\n\n"
+                    + f"<code>/add https://duccio.me/rss {random.choice(example_list)}</code>"
+                )
+                await msg.reply_text(message, parse_mode="HTML")
+                return
+            target_input = parts[1].strip()
+            custom_alias = parts[2].strip() if len(parts) >= 3 else None
+        else:
+            parts = raw_text.split(maxsplit=1)
+            if not parts or not parts[0].strip():
+                return
+            target_input = parts[0].strip()
+            custom_alias = parts[1].strip() if len(parts) >= 2 else None
 
         # Auto-detect special sources (Twitter, YouTube, Reddit)
-        twitter_user = extract_twitter_username(parts[1])
-        yt_feed_url = get_youtube_rss_url(parts[1])
-        reddit_feed_url = extract_reddit_target(parts[1])
+        twitter_user = extract_twitter_username(target_input)
+        yt_feed_url = get_youtube_rss_url(target_input)
+        reddit_feed_url = extract_reddit_target(target_input)
 
         if twitter_user:
             custom_bridge = os.environ.get("TWITTER_RSS_BRIDGE")
@@ -324,7 +334,7 @@ class Feedergraph(object):
 
             is_parsable, error_message = self.provider.validate_feed(arg_url)
             if not is_parsable:
-                safe_user = html.escape(parts[1])
+                safe_user = html.escape(target_input)
                 safe_err = html.escape(str(error_message))
                 user_friendly_message = (
                     f"{bip_bop()}Sorry! Could not find or access Twitter / X account <code>{safe_user}</code>.\n"
@@ -334,29 +344,29 @@ class Feedergraph(object):
                 await msg.reply_text(user_friendly_message, parse_mode="HTML")
                 return
 
-            if len(parts) >= 3:
-                arg_entry = parts[2].strip()
+            if custom_alias:
+                arg_entry = custom_alias
             else:
                 tw_title = self.provider.get_feed_title(arg_url)
                 arg_entry = f"🐦 {tw_title.strip()}" if tw_title else f"🐦 @{twitter_user}"
         elif yt_feed_url:
             arg_url = yt_feed_url
-            if len(parts) >= 3:
-                arg_entry = parts[2].strip()
+            if custom_alias:
+                arg_entry = custom_alias
             else:
                 yt_title = self.provider.get_feed_title(arg_url)
-                arg_entry = f"▶️ {yt_title.strip()}" if yt_title else f"▶️ YouTube ({parts[1]})"
+                arg_entry = f"▶️ {yt_title.strip()}" if yt_title else f"▶️ YouTube ({target_input})"
         elif reddit_feed_url:
             arg_url = reddit_feed_url
-            if len(parts) >= 3:
-                arg_entry = parts[2].strip()
+            if custom_alias:
+                arg_entry = custom_alias
             else:
                 r_title = self.provider.get_feed_title(arg_url)
-                arg_entry = f"🤖 {r_title.strip()}" if r_title else f"🤖 {parts[1]}"
+                arg_entry = f"🤖 {r_title.strip()}" if r_title else f"🤖 {target_input}"
         else:
             # Feed URL auto-discovery if user provided a website homepage or HTML page
-            discovered = FeedHandler.discover_feed_url(parts[1])
-            arg_url = discovered or FeedHandler.format_url_string(parts[1])
+            discovered = FeedHandler.discover_feed_url(target_input)
+            arg_url = discovered or FeedHandler.format_url_string(target_input)
 
             # Validate feed via provider
             is_parsable, error_message = self.provider.validate_feed(arg_url)
@@ -372,8 +382,8 @@ class Feedergraph(object):
                 return
 
             # Assign alias (custom or feed title)
-            if len(parts) >= 3:
-                arg_entry = parts[2].strip()
+            if custom_alias:
+                arg_entry = custom_alias
             else:
                 feed_title = self.provider.get_feed_title(arg_url)
                 if feed_title and feed_title.strip():
@@ -432,6 +442,16 @@ class Feedergraph(object):
             text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
+        # Trigger immediate background processing to deliver all initial articles
+        if hasattr(self, "processing") and self.processing:
+            feed_info = self.db.get_url(arg_url)
+            last_updated = feed_info[2] if feed_info else None
+            last_title = feed_info[1] if feed_info else ""
+            last_entry_id = feed_info[3] if feed_info else None
+            asyncio.create_task(
+                self.processing._process_single_feed(arg_url, last_updated, last_title, last_entry_id)
+            )
+
     async def get_n_feed(self, update, context):
         """Sends the latest N articles for the selected feed"""
         query = update.callback_query
@@ -477,6 +497,8 @@ class Feedergraph(object):
                     reply_markup=reply_markup,
                     link_preview_options=LinkPreviewOptions(prefer_small_media=True),
                 )
+                if len(entries) > 1:
+                    await asyncio.sleep(0.05)
 
     async def get(self, update, context):
         """Shows menu to manually request articles for a feed"""
@@ -520,6 +542,16 @@ class Feedergraph(object):
                             "url": data["url"],
                             "user": data["user"],
                             "number_feed": 10,
+                        },
+                    ),
+                    InlineKeyboardButton(
+                        "All / Tutti 🚀",
+                        callback_data={
+                            "option": "send_feed",
+                            "alias": data["alias"],
+                            "url": data["url"],
+                            "user": data["user"],
+                            "number_feed": 0,
                         },
                     ),
                 ],
@@ -975,6 +1007,16 @@ class Feedergraph(object):
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
+
+            # Trigger immediate background processing to deliver all initial articles
+            if hasattr(self, "processing") and self.processing:
+                feed_info = self.db.get_url(url)
+                last_updated = feed_info[2] if feed_info else None
+                last_title = feed_info[1] if feed_info else ""
+                last_entry_id = feed_info[3] if feed_info else None
+                asyncio.create_task(
+                    self.processing._process_single_feed(url, last_updated, last_title, last_entry_id)
+                )
 
     async def handle_menu_text(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles actions from reply keyboard menu buttons or direct URL input"""

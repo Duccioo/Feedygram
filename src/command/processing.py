@@ -82,16 +82,16 @@ class BatchProcess:
         Filters unread articles based on unique entry ID.
         """
         if not last_entry_id:
-            # First run or no ID saved: only consider the most recent article to prevent spam flood
-            return entries[:1]
+            # First run or no ID saved: return all available articles
+            return entries
 
         for i, entry in enumerate(entries):
             if str(entry.id) == str(last_entry_id):
                 # Returns all articles newer than the previously processed one
                 return entries[:i]
 
-        # If previous ID is no longer in the feed window, take only the most recent article
-        return entries[:1]
+        # If previous ID is no longer in the feed window, return all available articles
+        return entries
 
     async def _safe_fetch_entries(self, feed_url: str) -> Optional[List[FeedItem]]:
         """Fetches entries with error handling via the feed provider"""
@@ -120,6 +120,7 @@ class BatchProcess:
                         alias=user_alias,
                         use_telegraph=prefers_telegraph,
                     )
+                    await asyncio.sleep(0.05)
                 except Exception as e:
                     logger.error(f"Error sending to {user_id}: {e}")
                     traceback.print_exc()
