@@ -9,23 +9,22 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-300}
       - FEED_PROVIDER=local
-      # Interroga direttamente il container XRSS sulla rete interna di Docker
-      - TWITTER_RSS_BRIDGE=http://xrss:8000/{username}
     volumes:
       # Persistenza del database SQLite
       - feedygram_data:/app/src/database/data
-    depends_on:
-      - xrss
     networks:
       - feedygram_net
 
-  xrss:
-    image: ghcr.io/thytu/xrss:latest
-    container_name: xrss
+  # Container opzionale per auto-update delle immagini
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
     restart: unless-stopped
-    # Non è necessario esporre la porta all'esterno se usato solo da Feedygram
-    # ports:
-    #   - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400
     networks:
       - feedygram_net
 

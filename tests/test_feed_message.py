@@ -41,6 +41,17 @@ class TestFeedMessage(unittest.TestCase):
         self.assertNotIn("🏷️", msg)
         self.assertIn("Hello World", msg)
 
+    def test_send_feed_telegraph_mode(self):
+        msg, kb = send_feed(
+            telegraph=True,
+            alias="DuccioBlog",
+            post_link="https://example.com/article",
+            post_title="Hello World",
+            tags=["News"],
+        )
+        self.assertIn("[ DuccioBlog ]", msg)
+        self.assertIn("Hello World", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

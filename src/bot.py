@@ -442,16 +442,6 @@ class Feedergraph(object):
             text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-        # Trigger immediate background processing to deliver all initial articles
-        if hasattr(self, "processing") and self.processing:
-            feed_info = self.db.get_url(arg_url)
-            last_updated = feed_info[2] if feed_info else None
-            last_title = feed_info[1] if feed_info else ""
-            last_entry_id = feed_info[3] if feed_info else None
-            asyncio.create_task(
-                self.processing._process_single_feed(arg_url, last_updated, last_title, last_entry_id)
-            )
-
     async def get_n_feed(self, update, context):
         """Sends the latest N articles for the selected feed"""
         query = update.callback_query
@@ -498,7 +488,7 @@ class Feedergraph(object):
                     link_preview_options=LinkPreviewOptions(prefer_small_media=True),
                 )
                 if len(entries) > 1:
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(1.0)
 
     async def get(self, update, context):
         """Shows menu to manually request articles for a feed"""
@@ -635,6 +625,8 @@ class Feedergraph(object):
                 parse_mode="HTML",
                 reply_markup=item_keyboard,
             )
+            if len(entries) > 1:
+                await asyncio.sleep(0.3)
 
     async def help(self, update, context):
         """Sends help message with quick start keyboard"""
@@ -1007,16 +999,6 @@ class Feedergraph(object):
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
-
-            # Trigger immediate background processing to deliver all initial articles
-            if hasattr(self, "processing") and self.processing:
-                feed_info = self.db.get_url(url)
-                last_updated = feed_info[2] if feed_info else None
-                last_title = feed_info[1] if feed_info else ""
-                last_entry_id = feed_info[3] if feed_info else None
-                asyncio.create_task(
-                    self.processing._process_single_feed(url, last_updated, last_title, last_entry_id)
-                )
 
     async def handle_menu_text(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles actions from reply keyboard menu buttons or direct URL input"""

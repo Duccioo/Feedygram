@@ -144,7 +144,8 @@ class BatchProcess:
                         alias=user_alias,
                         use_telegraph=prefers_telegraph,
                     )
-                    await asyncio.sleep(0.05)
+                    # 1.0 second delay between messages to prevent Telegram rate limits
+                    await asyncio.sleep(1.0)
                 except Exception as e:
                     logger.error(f"Error sending to {user_id}: {e}")
                     traceback.print_exc()
