@@ -164,6 +164,7 @@ class BatchProcess:
             post_link=post_link,
             post_title=post_title,
             tags=entry.tags,
+            summary=entry.summary or "",
         )
 
         try:

@@ -8,6 +8,8 @@ docker-compose.yaml
 
 # C extensions
 *.so
+*.db
+src/database/*.db
 src/database/datastore.db
 src/database/data/datastore.db
 # Distribution / packaging

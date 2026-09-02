@@ -48,6 +48,7 @@ def send_feed(
     post_link: str,
     post_title: str,
     tags: Optional[List[str]] = None,
+    summary: str = "",
 ) -> Tuple[str, InlineKeyboardMarkup]:
     """Generate HTML-formatted text with hashtags and keyboard for an RSS item"""
 
@@ -58,7 +59,7 @@ def send_feed(
     safe_alias = html.escape(clean_alias)
 
     if telegraph:
-        link_first = convert_to_instant_link(post_link, title=clean_title)
+        link_first = convert_to_instant_link(post_link, title=clean_title, fallback_content=summary)
         reply_markup = make_feed_keyboard("✳️Normal Link✳️", clean_alias, False, post_link, clean_title)
     else:
         link_first = convert_to_fxtwitter_url(post_link)
