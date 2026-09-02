@@ -39,7 +39,7 @@ MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
 # -----
 from utils.database import DatabaseHandler
 from utils.feedhandler import FeedHandler
-from utils.make_text import bip_bop, random_emoji
+from utils.make_text import bip_bop, random_emoji, clean_feed_text
 from command.processing import BatchProcess
 from command.other_commands import (
     list_handler,
@@ -58,6 +58,17 @@ from utils.summarizer import summarize_article
 from utils.presets import (
     make_categories_keyboard,
     make_category_feeds_keyboard,
+)
+from command.admin import (
+    is_admin,
+    get_max_feeds_limit,
+    set_max_feeds_limit,
+    make_admin_dashboard_keyboard,
+    make_max_feeds_keyboard,
+    make_broadcast_confirm_keyboard,
+    make_back_to_admin_keyboard,
+    format_admin_dashboard_message,
+    format_system_stats_message,
 )
 
 
@@ -132,6 +143,7 @@ class Feedergraph(object):
             CommandHandler("filter", self.filter_command),
             CommandHandler("channel", self.channel_command),
             CommandHandler(["explore", "presets", "popular"], self.explore_command),
+            CommandHandler("admin", self.admin_command),
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_menu_text),
             MessageHandler(filters.Document.ALL, self.handle_document),
         ]
@@ -146,6 +158,7 @@ class Feedergraph(object):
             "explore_category": validate_callback_data("explore_category"),
             "explore_categories": validate_callback_data("explore_categories"),
             "add_preset": validate_callback_data("add_preset"),
+            "admin_action": validate_callback_data("admin_action"),
         }
 
         for pattern, handler in [
@@ -158,6 +171,7 @@ class Feedergraph(object):
             (callback_patterns["explore_category"], self.handle_explore_category),
             (callback_patterns["explore_categories"], self.handle_explore_categories),
             (callback_patterns["add_preset"], self.handle_add_preset),
+            (callback_patterns["admin_action"], self.handle_admin_action),
         ]:
             self.bot.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
@@ -392,6 +406,17 @@ class Feedergraph(object):
                     arg_entry = f"{random_emoji()} {arg_url}"
 
         user_entries = self.db.get_urls_for_user(telegram_id=chat_id)
+
+        # Check maximum feeds limit (exempt for admins)
+        max_limit = get_max_feeds_limit(self.db)
+        if max_limit > 0 and not is_admin(chat_id) and len(user_entries) >= max_limit:
+            message = (
+                f"⚠️ <b>Limite Massimo Feed Raggiunto!</b>\n\n"
+                f"Hai già raggiunto il numero massimo di <b>{max_limit}</b> feed consentiti per il tuo account.\n"
+                f"Per aggiungere un nuovo feed, rimuovine prima uno con <b>/remove</b>!"
+            )
+            await msg.reply_text(message, parse_mode="HTML")
+            return
 
         # Check if URL is already saved for this user
         if any(arg_url == entry[0] for entry in user_entries):
@@ -702,10 +727,17 @@ class Feedergraph(object):
                 return
 
             existing = {entry[0] for entry in self.db.get_urls_for_user(telegram_id=chat_id)}
+            max_limit = get_max_feeds_limit(self.db)
             added = 0
             skipped = 0
+            limit_hit = False
 
             for url, title in parsed_feeds:
+                if max_limit > 0 and not is_admin(chat_id) and len(existing) >= max_limit:
+                    limit_hit = True
+                    skipped += 1
+                    continue
+
                 formatted_url = FeedHandler.format_url_string(url)
                 if formatted_url in existing:
                     skipped += 1
@@ -720,10 +752,15 @@ class Feedergraph(object):
                 else:
                     skipped += 1
 
+            limit_warning = (
+                f"\n\n⚠️ <i>Alcuni feed sono stati saltati perché hai raggiunto il limite massimo ({max_limit} feed).</i>"
+                if limit_hit
+                else ""
+            )
             result_msg = (
                 f"🎉 <b>Import completed!</b>\n\n"
                 f"✅ Feeds added: <b>{added}</b>\n"
-                f"⏭️ Feeds skipped or duplicate: <b>{skipped}</b>\n\n"
+                f"⏭️ Feeds skipped or duplicate: <b>{skipped}</b>{limit_warning}\n\n"
                 "Use <b>/list</b> to see your updated subscriptions."
             )
             await status_msg.edit_text(result_msg, parse_mode="HTML")
@@ -873,13 +910,14 @@ class Feedergraph(object):
         if query is not None:
             await query.answer("Generating summary...")
             data = query.data
-            link = data.get("link", "")
-            title = data.get("title", "")
-            alias = data.get("alias", "Feed")
+            raw_title = data.get("title", "")
+            raw_alias = data.get("alias", "Feed")
+            title = clean_feed_text(raw_title)
+            alias = clean_feed_text(raw_alias) or "Feed"
 
             summary = summarize_article(link, title=title)
-            safe_title = html.escape(str(title).strip() if title else "Article")
-            safe_alias = html.escape(str(alias).strip())
+            safe_title = html.escape(title if title else "Article")
+            safe_alias = html.escape(alias)
             safe_summary = html.escape(summary)
 
             # Edit message in-place adding summary
@@ -969,6 +1007,11 @@ class Feedergraph(object):
             alias = f"{random_emoji()} {name}"
 
             user_entries = self.db.get_urls_for_user(telegram_id=chat_id)
+            max_limit = get_max_feeds_limit(self.db)
+            if max_limit > 0 and not is_admin(chat_id) and len(user_entries) >= max_limit:
+                await query.answer(f"⚠️ Limite di {max_limit} feed raggiunto! Rimuovine uno con /remove.", show_alert=True)
+                return
+
             if any(url == entry[0] for entry in user_entries):
                 await query.message.reply_text(
                     f"You are already subscribed to <b>{html.escape(name)}</b>!",
@@ -1000,10 +1043,250 @@ class Feedergraph(object):
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
 
+    async def admin_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Opens admin dashboard with interactive buttons if authorized"""
+        user = update.effective_user
+        if not user or not is_admin(user.id):
+            await update.effective_message.reply_text(
+                "⛔ <b>Accesso Negato</b>\n\nQuesto comando è riservato all'amministratore del bot.",
+                parse_mode="HTML",
+            )
+            return
+
+        stats = self.db.get_system_stats()
+        current_limit = get_max_feeds_limit(self.db)
+        text = format_admin_dashboard_message(stats, current_limit, user)
+        await update.effective_message.reply_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=make_admin_dashboard_keyboard(),
+        )
+
+    async def handle_admin_action(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handles inline keyboard interactions for admin dashboard"""
+        query = update.callback_query
+        if query is None:
+            return
+
+        user = query.from_user
+        if not is_admin(user.id):
+            await query.answer("Non autorizzato.", show_alert=True)
+            return
+
+        data = query.data
+        action = data.get("action")
+
+        if action == "noop":
+            await query.answer()
+            return
+
+        elif action == "show_menu":
+            await query.answer()
+            stats = self.db.get_system_stats()
+            current_limit = get_max_feeds_limit(self.db)
+            text = format_admin_dashboard_message(stats, current_limit, user)
+            await query.edit_message_text(
+                text=text,
+                parse_mode="HTML",
+                reply_markup=make_admin_dashboard_keyboard(),
+            )
+
+        elif action == "max_feeds_menu":
+            await query.answer()
+            current_limit = get_max_feeds_limit(self.db)
+            limit_str = "♾️ Illimitati" if current_limit == 0 else f"<b>{current_limit}</b>"
+            msg = (
+                f"🔢 <b>Gestione Limite Feed per Utente</b>\n\n"
+                f"• Limite attuale: {limit_str} feed/utente\n"
+                f"• Gli amministratori hanno sempre feed <b>illimitati</b>.\n\n"
+                f"Usa i tasti sotto per modificare il limite (salvato automaticamente nel database):"
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_max_feeds_keyboard(current_limit),
+            )
+
+        elif action == "adjust_limit":
+            delta = int(data.get("delta", 0))
+            current = get_max_feeds_limit(self.db)
+            new_limit = max(0, current + delta)
+            set_max_feeds_limit(self.db, new_limit)
+            await query.answer(f"Nuovo limite: {'Illimitati' if new_limit == 0 else new_limit}")
+            limit_str = "♾️ Illimitati" if new_limit == 0 else f"<b>{new_limit}</b>"
+            msg = (
+                f"🔢 <b>Gestione Limite Feed per Utente</b>\n\n"
+                f"• Limite attuale: {limit_str} feed/utente\n"
+                f"• Gli amministratori hanno sempre feed <b>illimitati</b>.\n\n"
+                f"Usa i tasti sotto per modificare il limite (salvato automaticamente nel database):"
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_max_feeds_keyboard(new_limit),
+            )
+
+        elif action == "set_limit":
+            val = int(data.get("value", 15))
+            new_limit = max(0, val)
+            set_max_feeds_limit(self.db, new_limit)
+            await query.answer(f"Limite impostato a: {'Illimitati' if new_limit == 0 else new_limit}")
+            limit_str = "♾️ Illimitati" if new_limit == 0 else f"<b>{new_limit}</b>"
+            msg = (
+                f"🔢 <b>Gestione Limite Feed per Utente</b>\n\n"
+                f"• Limite attuale: {limit_str} feed/utente\n"
+                f"• Gli amministratori hanno sempre feed <b>illimitati</b>.\n\n"
+                f"Usa i tasti sotto per modificare il limite (salvato automaticamente nel database):"
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_max_feeds_keyboard(new_limit),
+            )
+
+        elif action == "prompt_broadcast":
+            await query.answer()
+            context.user_data["admin_state"] = "waiting_broadcast"
+            total_active = len(self.db.get_all_active_user_ids())
+            msg = (
+                f"📢 <b>Invia un Annuncio Broadcast</b>\n\n"
+                f"Destinatari: circa <b>{total_active}</b> utenti attivi.\n\n"
+                f"✍️ Invia ora in questa chat il messaggio che desideri inoltrare a tutti gli utenti.\n"
+                f"<i>(Potrai visionare l'anteprima e confermare prima dell'invio effettivo)</i>"
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_back_to_admin_keyboard(),
+            )
+
+        elif action == "confirm_broadcast":
+            await query.answer("Invio broadcast avviato...")
+            broadcast_text = context.user_data.get("broadcast_pending")
+            context.user_data["broadcast_pending"] = None
+            context.user_data["admin_state"] = None
+
+            if not broadcast_text:
+                await query.edit_message_text(
+                    "❌ Nessun messaggio in attesa di invio.",
+                    reply_markup=make_back_to_admin_keyboard(),
+                )
+                return
+
+            user_ids = self.db.get_all_active_user_ids()
+            success_count = 0
+            fail_count = 0
+
+            status_msg = await query.edit_message_text(
+                f"⏳ <b>Invio broadcast in corso...</b>\n0 / {len(user_ids)} inviati...",
+                parse_mode="HTML",
+            )
+
+            for uid in user_ids:
+                try:
+                    await self.bot.bot.send_message(
+                        chat_id=uid,
+                        text=broadcast_text,
+                        parse_mode="HTML",
+                    )
+                    success_count += 1
+                    await asyncio.sleep(0.05)
+                except Exception as e:
+                    fail_count += 1
+                    err_s = str(e).lower()
+                    if "blocked" in err_s or "deactivated" in err_s or "chat not found" in err_s:
+                        self.db.deactivate_user(uid)
+
+            await status_msg.edit_text(
+                f"📢 <b>Broadcast Completato!</b>\n\n"
+                f"• ✅ Consegnati con successo: <b>{success_count}</b>\n"
+                f"• ❌ Falliti o disattivati: <b>{fail_count}</b>\n"
+                f"• 👥 Totale destinatari tentati: <b>{len(user_ids)}</b>",
+                parse_mode="HTML",
+                reply_markup=make_back_to_admin_keyboard(),
+            )
+
+        elif action == "cancel_broadcast":
+            await query.answer("Broadcast annullato.")
+            context.user_data["broadcast_pending"] = None
+            context.user_data["admin_state"] = None
+            stats = self.db.get_system_stats()
+            current_limit = get_max_feeds_limit(self.db)
+            text = format_admin_dashboard_message(stats, current_limit, user)
+            await query.edit_message_text(
+                text=text,
+                parse_mode="HTML",
+                reply_markup=make_admin_dashboard_keyboard(),
+            )
+
+        elif action == "system_stats":
+            await query.answer()
+            stats = self.db.get_system_stats()
+            provider_name = getattr(self.provider, "__class__", type(self.provider)).__name__
+            interval = int(os.environ.get("UPDATE_INTERVAL", 300))
+            msg = format_system_stats_message(stats, provider_name, interval)
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_back_to_admin_keyboard(),
+            )
+
+        elif action == "force_sync":
+            await query.answer("Sincronizzazione avviata in background!", show_alert=True)
+            if hasattr(self, "processing") and self.processing:
+                asyncio.create_task(self.processing.run())
+            msg = (
+                "🔄 <b>Sincronizzazione Forzata Avviata!</b>\n\n"
+                "Il ciclo di polling è stato eseguito su tutti i feed attivi.\n"
+                "Se sono presenti nuovi articoli, gli utenti iscritti riceveranno le relative notifiche a breve."
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_back_to_admin_keyboard(),
+            )
+
+        elif action == "clean_orphaned":
+            pruned = self.db.prune_orphaned_feeds()
+            await query.answer(f"Rimossi {pruned} feed orfani!")
+            msg = (
+                f"🧹 <b>Pulizia Database Completata!</b>\n\n"
+                f"• Feed orfani rimossi: <b>{pruned}</b>\n"
+                f"Tutti i feed rimasti nel database hanno almeno un utente iscritto attivo."
+            )
+            await query.edit_message_text(
+                text=msg,
+                parse_mode="HTML",
+                reply_markup=make_back_to_admin_keyboard(),
+            )
+
+        elif action == "close":
+            await query.answer()
+            await query.edit_message_text("🔒 <i>Dashboard amministratore chiusa.</i>", parse_mode="HTML")
+
     async def handle_menu_text(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles actions from reply keyboard menu buttons or direct URL input"""
+        user_id = update.effective_user.id if update.effective_user else None
         text = (update.effective_message.text or "").strip()
         if not text:
+            return
+
+        # Intercept broadcast message drafting from admin
+        if context.user_data.get("admin_state") == "waiting_broadcast" and is_admin(user_id):
+            context.user_data["admin_state"] = None
+            context.user_data["broadcast_pending"] = text
+            preview_msg = (
+                f"📢 <b>Anteprima Messaggio Broadcast</b>\n"
+                f"──────────────────────\n"
+                f"{text}\n"
+                f"──────────────────────\n\n"
+                f"⚠️ Sei sicuro di voler inviare questo messaggio a <b>tutti</b> gli utenti registrati del bot?"
+            )
+            await update.effective_message.reply_text(
+                preview_msg,
+                parse_mode="HTML",
+                reply_markup=make_broadcast_confirm_keyboard(),
+            )
             return
 
         if text in ["📖 My Feeds", "My Feeds", "📖 I Miei Feed", "I Miei Feed"]:

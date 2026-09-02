@@ -67,6 +67,16 @@ class DatabaseHandler:
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_feed_history_url ON feed_history(url)")
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_history_url_entry ON feed_history(url, entry_id)")
+
+                # bot_settings migration
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bot_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
         except Exception as e:
             logger.warning("Database schema migration: %s", e)
 
@@ -425,6 +435,83 @@ class DatabaseHandler:
         with self._get_connection() as conn:
             cursor = conn.execute(query)
             return cursor.fetchone()[0]
+
+    def get_all_active_user_ids(self) -> List[int]:
+        """Returns list of telegram IDs for all active users"""
+        query = "SELECT telegram_id FROM user WHERE is_active = 1 ORDER BY telegram_id ASC"
+        with self._get_connection() as conn:
+            cursor = conn.execute(query)
+            return [row[0] for row in cursor.fetchall()]
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Retrieves a persistent setting value from bot_settings"""
+        query = "SELECT value FROM bot_settings WHERE key = ?"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query, (str(key),))
+                row = cursor.fetchone()
+                return str(row[0]) if row else default
+        except Exception as e:
+            logger.warning(f"Error fetching setting {key}: {e}")
+            return default
+
+    def set_setting(self, key: str, value: Any) -> None:
+        """Saves or updates a persistent setting in bot_settings"""
+        query = """
+            INSERT INTO bot_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (str(key), str(value)))
+
+    def get_system_stats(self) -> dict:
+        """Aggregates system and database statistics for admin dashboard"""
+        with self._get_connection() as conn:
+            total_users = conn.execute("SELECT COUNT(*) FROM user").fetchone()[0]
+            active_users = conn.execute("SELECT COUNT(*) FROM user WHERE is_active = 1").fetchone()[0]
+            total_feeds = conn.execute("SELECT COUNT(*) FROM web").fetchone()[0]
+            active_feeds = conn.execute(
+                """
+                SELECT COUNT(DISTINCT w.url)
+                FROM web w
+                JOIN web_user wu ON w.url = wu.url
+                JOIN user u ON wu.telegram_id = u.telegram_id
+                WHERE u.is_active = 1
+                """
+            ).fetchone()[0]
+            total_subscriptions = conn.execute("SELECT COUNT(*) FROM web_user").fetchone()[0]
+            total_history = conn.execute("SELECT COUNT(*) FROM feed_history").fetchone()[0]
+
+        db_size_bytes = 0
+        if os.path.exists(self.database_path):
+            db_size_bytes = os.path.getsize(self.database_path)
+
+        return {
+            "total_users": total_users,
+            "active_users": active_users,
+            "total_feeds": total_feeds,
+            "active_feeds": active_feeds,
+            "total_subscriptions": total_subscriptions,
+            "total_history": total_history,
+            "db_size_bytes": db_size_bytes,
+        }
+
+    def prune_orphaned_feeds(self) -> int:
+        """
+        Removes feeds that have 0 active or inactive subscribers, cleaning up orphaned database rows.
+        Returns the number of pruned feeds.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM web
+                WHERE url NOT IN (SELECT DISTINCT url FROM web_user)
+                """
+            )
+            pruned_count = cursor.rowcount
+        logger.info(f"Pruned {pruned_count} orphaned feeds from database")
+        return pruned_count
 
     # Validation methods
     @staticmethod

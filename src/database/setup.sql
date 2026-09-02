@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS feed_history (
     FOREIGN KEY(url) REFERENCES web(url) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS bot_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_web_user_alias ON web_user(alias);
 CREATE INDEX IF NOT EXISTS idx_web_last_updated ON web(last_updated);
 CREATE INDEX IF NOT EXISTS idx_feed_history_url ON feed_history(url);

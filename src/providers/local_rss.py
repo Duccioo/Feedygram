@@ -1,6 +1,7 @@
 from typing import List, Tuple, Optional
 from utils.feedhandler import FeedHandler
 from utils.datehandler import DateHandler
+from utils.make_text import clean_feed_text
 from utils.twitter import (
     extract_twitter_username,
     fetch_twitter_syndication_entries,
@@ -74,7 +75,7 @@ class LocalRSSProvider(BaseFeedProvider):
         items: List[FeedItem] = []
         for entry in raw_entries:
             entry_id = FeedHandler.get_entry_id(entry)
-            title = getattr(entry, "title", None)
+            title = clean_feed_text(getattr(entry, "title", None))
             link = getattr(entry, "link", "")
             source_link = FeedHandler.extract_source_link(entry)
 
@@ -82,16 +83,14 @@ class LocalRSSProvider(BaseFeedProvider):
             parsed_date = DateHandler.parse_datetime(date_val) if date_val else None
 
             summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
-            if not title or str(title).strip() in ("", "No Title"):
+            if not title or title in ("", "No Title"):
                 if summary:
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(summary, "html.parser")
                     clean_summary = " ".join(soup.get_text().split())
-                    title = clean_summary if clean_summary else "No Title"
+                    title = clean_feed_text(clean_summary) if clean_summary else "No Title"
                 else:
                     title = "No Title"
-            else:
-                title = str(title).strip()
 
             # Extraction of native categories / tags from feed
             raw_tags = getattr(entry, "tags", None) or getattr(entry, "categories", None)

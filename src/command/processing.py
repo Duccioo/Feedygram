@@ -8,6 +8,7 @@ from telegram.error import RetryAfter, TelegramError
 # -----
 from utils.database import DatabaseHandler
 from utils.filters import matches_filter
+from utils.make_text import clean_feed_text
 import command.feed_message as feed_message
 from providers import BaseFeedProvider, FeedItem, get_feed_provider
 
@@ -196,7 +197,7 @@ class BatchProcess:
         self.db.update_feed(
             url=feed_url,
             last_updated=str(latest_entry.published) if latest_entry.published else None,
-            last_title=latest_entry.title or "No Title",
+            last_title=clean_feed_text(latest_entry.title) or "No Title",
             last_entry_id=str(latest_entry.id),
         )
 

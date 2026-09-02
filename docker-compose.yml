@@ -9,6 +9,8 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-300}
       - FEED_PROVIDER=local
+      - ADMIN_USER_ID=${ADMIN_USER_ID:-}
+      - MAX_FEEDS_PER_USER=${MAX_FEEDS_PER_USER:-15}
     volumes:
       # Persistenza del database SQLite
       - feedygram_data:/app/src/database/data

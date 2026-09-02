@@ -1,4 +1,7 @@
+import html
 import random
+import re
+from typing import Optional
 
 EMOJIS = [
     "📰", "⚡", "✨", "🍕", "🔥", "🚀", "💡", "📡", "🐕", "☕",
@@ -37,4 +40,43 @@ def bip_bop() -> str:
         " BI BI BIP ",
         " PIP BUP ",
     ])
+
+
+def clean_feed_text(raw: Optional[str]) -> str:
+    """
+    Cleans raw feed text:
+    1. Unescapes HTML entities (e.g. &#8216; -> ‘, &#8217; -> ’, &amp; -> &, &quot; -> ").
+    2. Supports multi-pass unescaping for double-encoded entities (e.g. &amp;#8216;).
+    3. Strips embedded HTML formatting tags (<p>, <b>, <i>, <span>, etc.) while preserving mathematical brackets.
+    4. Normalizes special whitespace (non-breaking spaces, zero-width spaces).
+    """
+    if not raw:
+        return ""
+
+    text = str(raw)
+
+    # Strip CDATA tags if present
+    text = re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", text, flags=re.DOTALL)
+
+    # Iterative HTML entity unescaping (up to 3 passes to handle multiply-escaped strings)
+    for _ in range(3):
+        decoded = html.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+
+    # Strip common HTML presentation/layout tags with word boundary to avoid stripping math or generics
+    text = re.sub(
+        r"<\/?(?:b|i|u|s|em|strong|span|p|a|br|div|small|h[1-6]|font|article|section|figure|figcaption)\b[^>]*>",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Normalize special/invisible spaces
+    text = text.replace("\xa0", " ").replace("\u200b", "").replace("\ufeff", "")
+
+    # Collapse multiple whitespaces and strip margins
+    return " ".join(text.split())
+
 

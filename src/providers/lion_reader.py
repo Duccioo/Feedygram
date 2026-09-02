@@ -2,6 +2,7 @@ import logging
 import requests
 from typing import List, Tuple, Optional, Any, Dict
 from utils.datehandler import DateHandler
+from utils.make_text import clean_feed_text
 from .base import BaseFeedProvider
 from .models import FeedItem
 
@@ -62,7 +63,8 @@ class LionReaderProvider(BaseFeedProvider):
                 for feed in feeds:
                     if isinstance(feed, dict):
                         if feed.get("url") == target or str(feed.get("id")) == str(target):
-                            return feed.get("title") or feed.get("name")
+                            raw_title = feed.get("title") or feed.get("name")
+                            return clean_feed_text(raw_title) if raw_title else None
         except Exception as e:
             logger.debug(f"Error retrieving feed title from API: {e}")
         return None
@@ -97,7 +99,7 @@ class LionReaderProvider(BaseFeedProvider):
                     continue
                 
                 entry_id = str(item.get("id") or item.get("guid") or item.get("url") or item.get("link") or "")
-                title = item.get("title") or "No Title"
+                title = clean_feed_text(item.get("title")) or "No Title"
                 link = item.get("url") or item.get("link") or ""
                 summary = item.get("summary") or item.get("content") or item.get("description") or ""
                 

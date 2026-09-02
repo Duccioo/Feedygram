@@ -148,14 +148,17 @@ class FeedHandler:
 
     @classmethod
     def get_feed_title(cls, url: str) -> Optional[str]:
+        from utils.make_text import clean_feed_text
+
         feed = cls.parse_feed(url)
         if feed and hasattr(feed, "feed") and getattr(feed.feed, "title", None):
-            return feed.feed.title
+            return clean_feed_text(feed.feed.title) or None
 
         from utils.twitter import extract_twitter_username, get_twitter_user_title
         tw_user = extract_twitter_username(url)
         if tw_user:
-            return get_twitter_user_title(tw_user)
+            tw_title = get_twitter_user_title(tw_user)
+            return clean_feed_text(tw_title) if tw_title else None
 
         return None
 
