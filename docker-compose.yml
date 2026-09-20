@@ -11,6 +11,7 @@ services:
       - FEED_PROVIDER=local
       - ADMIN_USER_ID=${ADMIN_USER_ID:-}
       - MAX_FEEDS_PER_USER=${MAX_FEEDS_PER_USER:-15}
+      - CALLBACK_CACHE_SIZE=${CALLBACK_CACHE_SIZE:-2048}
     volumes:
       # Persistenza del database SQLite
       - feedygram_data:/app/src/database/data

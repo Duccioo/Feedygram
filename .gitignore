@@ -9,9 +9,11 @@ docker-compose.yaml
 # C extensions
 *.so
 *.db
+*.pickle
 src/database/*.db
 src/database/datastore.db
 src/database/data/datastore.db
+src/database/data/*.pickle
 # Distribution / packaging
 .Python
 build/

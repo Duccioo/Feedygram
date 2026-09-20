@@ -15,7 +15,10 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     CallbackQueryHandler,
+    InvalidCallbackData,
     MessageHandler,
+    PicklePersistence,
+    PersistenceInput,
     filters,
 )
 from telegram import (
@@ -79,6 +82,7 @@ logger = logging.getLogger(__name__)
 load_dotenv(override=True)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 UPDATE_INTERVAL = os.environ.get("UPDATE_INTERVAL", "300")
+CALLBACK_CACHE_SIZE = os.environ.get("CALLBACK_CACHE_SIZE", "2048")
 
 
 def validate_callback_data(pattern: str):
@@ -94,6 +98,11 @@ def validate_callback_data(pattern: str):
 class Feedergraph(object):
     def __init__(self, telegram_token: str, update_interval: str):
         self._validate_config(telegram_token, update_interval)
+
+        try:
+            self.callback_cache_size = int(os.environ.get("CALLBACK_CACHE_SIZE", "2048"))
+        except ValueError:
+            self.callback_cache_size = 2048
 
         data_path = pathlib.Path(__file__).parent / "database" / "data"
         if not os.path.exists(data_path):
@@ -116,11 +125,25 @@ class Feedergraph(object):
             raise ValueError("UPDATE_INTERVAL must be an integer (in seconds).")
 
     def _init_bot(self, token: str) -> None:
+        data_path = pathlib.Path(__file__).parent / "database" / "data"
+        persistence_path = data_path / "bot_persistence.pickle"
+
+        persistence = PicklePersistence(
+            filepath=str(persistence_path),
+            store_data=PersistenceInput(
+                bot_data=False,
+                chat_data=False,
+                user_data=True,
+                callback_data=True,
+            ),
+        )
+
         self.bot = (
             Application.builder()
             .token(token)
             .concurrent_updates(True)
-            .arbitrary_callback_data(True)
+            .persistence(persistence)
+            .arbitrary_callback_data(self.callback_cache_size)
             .build()
         )
         self.job_queue = self.bot.job_queue
@@ -174,6 +197,9 @@ class Feedergraph(object):
             (callback_patterns["admin_action"], self.handle_admin_action),
         ]:
             self.bot.add_handler(CallbackQueryHandler(handler, pattern=pattern))
+
+        # Catch-all for expired or invalid callback data
+        self.bot.add_handler(CallbackQueryHandler(self.handle_invalid_callback, pattern=InvalidCallbackData))
 
         for handler in handlers:
             self.bot.add_handler(handler)
@@ -229,23 +255,40 @@ class Feedergraph(object):
         )
 
 
+    async def handle_invalid_callback(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handles clicks on expired or invalid callback buttons."""
+        query = update.callback_query
+        if query is not None:
+            try:
+                await query.answer(
+                    text="⚠️ This button has expired or is no longer valid.",
+                    show_alert=True,
+                )
+            except Exception as e:
+                logger.debug(f"Error answering invalid callback query: {e}")
+
     async def update_message(self, update, context):
         """Updates a single feed message toggling link type (Normal vs Telegraph)"""
         query = update.callback_query
         if query is not None:
             await query.answer()
             data = query.data
-            message, keyboard = feed_message.send_feed(
-                telegraph=bool(data["set_telegraph"]),
-                alias=data["alias"],
-                post_link=data["link"],
-                post_title=data["title"],
-            )
-            await query.edit_message_text(
-                text=message,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
+            if not isinstance(data, dict):
+                return
+            try:
+                message, keyboard = feed_message.send_feed(
+                    telegraph=bool(data.get("set_telegraph")),
+                    alias=data.get("alias", ""),
+                    post_link=data.get("link", ""),
+                    post_title=data.get("title", ""),
+                )
+                await query.edit_message_text(
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
+            except Exception as e:
+                logger.warning(f"Error updating feed message link: {e}")
 
     async def change_list_type(self, update, context):
         """Updates user default link preference for a feed (Normal Link vs Telegraph)"""
