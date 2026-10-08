@@ -160,3 +160,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 .qodo
+
+# Local bot logs (may contain secrets such as the Telegram token in httpx lines)
+_feedergraph_logs.txt
+*.log

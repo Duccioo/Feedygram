@@ -29,6 +29,18 @@ class TestDatabaseAndDate(unittest.TestCase):
         self.assertEqual(dt.month, 8)
         self.assertEqual(dt.day, 18)
 
+    def test_date_handler_us_timezone_abbreviation(self):
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            dt = DateHandler.parse_datetime("Tue, 07 Oct 2026 12:00:00 EDT")
+        tz_warnings = [w for w in caught if "tzname" in str(w.message)]
+        self.assertEqual(tz_warnings, [])
+        self.assertIsNotNone(dt.tzinfo)
+        self.assertEqual((dt.year, dt.month, dt.day), (2026, 10, 7))
+        self.assertEqual((dt.hour, dt.minute), (18, 0))
+
     def test_add_bookmark_auto_creates_user(self):
         # Adding a bookmark for a non-existing user should not fail with foreign key error
         user_id = 999888

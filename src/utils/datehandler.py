@@ -13,8 +13,28 @@ except Exception:
 
 try:
     from dateutil import parser as date_parser
+    from dateutil.parser import UnknownTimezoneWarning
 except ImportError:
     date_parser = None
+    UnknownTimezoneWarning = Warning
+
+
+_COMMON_TZINFOS = {
+    "EST": -5 * 3600,
+    "EDT": -4 * 3600,
+    "CST": -6 * 3600,
+    "CDT": -5 * 3600,
+    "MST": -7 * 3600,
+    "MDT": -6 * 3600,
+    "PST": -8 * 3600,
+    "PDT": -7 * 3600,
+    "UT": 0,
+    "UTC": 0,
+    "GMT": 0,
+    "Z": 0,
+    "CET": 3600,
+    "CEST": 7200,
+}
 
 
 class DateHandler:
@@ -43,7 +63,11 @@ class DateHandler:
             parsed_datetime = None
             if date_parser is not None:
                 try:
-                    parsed_datetime = date_parser.parse(str(date_val))
+                    import warnings
+
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", UnknownTimezoneWarning)
+                        parsed_datetime = date_parser.parse(str(date_val), tzinfos=_COMMON_TZINFOS)
                 except Exception:
                     pass
             if parsed_datetime is None:

@@ -213,7 +213,12 @@ class Feedergraph(object):
                 bot=self.bot,
                 provider=self.provider,
             )
-            self.job_queue.run_repeating(self.processing.run, interval_int, first=1)
+            self.job_queue.run_repeating(
+                self.processing.run,
+                interval_int,
+                first=1,
+                job_kwargs={"misfire_grace_time": 60, "coalesce": True, "max_instances": 1},
+            )
             logger.info("Bot and polling started successfully")
             self.bot.run_polling()
         except Exception as e:

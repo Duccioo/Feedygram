@@ -33,6 +33,10 @@ class BatchProcess:
         """Runs concurrent polling for all feeds with a rate-limiting semaphore"""
         if not self._is_running:
             return
+        if getattr(self, "_run_in_progress", False):
+            logger.warning("Previous batch run still in progress, skipping this tick")
+            return
+        self._run_in_progress = True
 
         try:
             feeds = self.db.get_all_feeds()
@@ -50,11 +54,19 @@ class BatchProcess:
                 _process_worker(feed_url, last_updated, last_title, last_entry_id)
                 for feed_url, last_updated, last_title, last_entry_id in feeds
             ]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=self.update_interval,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Batch run timed out after %ss, moving to next tick", self.update_interval)
 
         except Exception as e:
             logger.error(f"Error during batch execution: {e}")
             traceback.print_exc()
+        finally:
+            self._run_in_progress = False
 
     async def _process_single_feed(
         self, feed_url: str, last_updated, last_title: str, last_entry_id: Optional[str]
@@ -121,7 +133,7 @@ class BatchProcess:
     async def _safe_fetch_entries(self, feed_url: str) -> Optional[List[FeedItem]]:
         """Fetches entries with error handling via the feed provider"""
         try:
-            return self.provider.fetch_entries(feed_url, limit=0)
+            return await asyncio.to_thread(self.provider.fetch_entries, feed_url, 0)
         except Exception as e:
             logger.warning(f"Error fetching entries for {feed_url}: {e}")
             return None

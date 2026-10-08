@@ -141,6 +141,57 @@ class TestProcessing(unittest.TestCase):
             last_entry_id="item-new",
         )
 
+    def test_run_skips_when_previous_run_in_progress(self):
+        """A new tick must not overlap a still-running batch"""
+        import asyncio
+
+        self.mock_db.get_all_feeds.return_value = []
+        self.processor._run_in_progress = True
+
+        async def _test():
+            await self.processor.run()
+
+        asyncio.run(_test())
+
+        self.mock_db.get_all_feeds.assert_not_called()
+        self.assertTrue(self.processor._run_in_progress)
+
+    def test_run_resets_in_progress_flag(self):
+        """The overlap guard flag must be cleared after a run"""
+        import asyncio
+
+        self.mock_db.get_all_feeds.return_value = []
+
+        async def _test():
+            await self.processor.run()
+
+        asyncio.run(_test())
+
+        self.assertFalse(self.processor._run_in_progress)
+
+    def test_safe_fetch_entries_does_not_block_event_loop(self):
+        """Sync provider fetch must run in a worker thread"""
+        import asyncio
+        import threading
+
+        main_thread_id = threading.get_ident()
+        seen_threads = []
+
+        def fake_fetch(target, limit=0):
+            seen_threads.append(threading.get_ident())
+            return []
+
+        self.mock_provider.fetch_entries.side_effect = fake_fetch
+
+        async def _test():
+            return await self.processor._safe_fetch_entries("https://example.com/rss")
+
+        result = asyncio.run(_test())
+
+        self.assertEqual(result, [])
+        self.assertEqual(len(seen_threads), 1)
+        self.assertNotEqual(seen_threads[0], main_thread_id)
+
 
 if __name__ == "__main__":
     unittest.main()
