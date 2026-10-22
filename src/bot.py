@@ -961,10 +961,24 @@ class Feedergraph(object):
             data = query.data
             raw_title = data.get("title", "")
             raw_alias = data.get("alias", "Feed")
+            link = data.get("link", "")
             title = clean_feed_text(raw_title)
             alias = clean_feed_text(raw_alias) or "Feed"
 
-            summary = summarize_article(link, title=title)
+            if not link:
+                await query.edit_message_text(
+                    text="⚠️ Link non disponibile per il riassunto.",
+                    parse_mode="HTML",
+                )
+                return
+            try:
+                summary = await asyncio.wait_for(
+                    asyncio.to_thread(summarize_article, link, title, ""),
+                    timeout=60,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("TL;DR timed out for %s", link)
+                summary = "Riassunto non disponibile (timeout)."
             safe_title = html.escape(title if title else "Article")
             safe_alias = html.escape(alias)
             safe_summary = html.escape(summary)

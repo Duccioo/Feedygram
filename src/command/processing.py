@@ -86,7 +86,13 @@ class BatchProcess:
             if not new_entries:
                 return
 
-            await self._notify_users(feed_url, new_entries)
+            sent, failed, filtered = await self._notify_users(feed_url, new_entries)
+            if sent == 0 and failed > 0 and filtered == 0:
+                # All sends failed transiently: keep cursor so entries are retried next tick
+                logger.warning(
+                    "All %d sends failed for %s, keeping cursor for retry", failed, feed_url
+                )
+                return
             latest_entry = new_entries[0]
             self._update_feed_metadata(feed_url, latest_entry)
 
@@ -138,17 +144,30 @@ class BatchProcess:
             logger.warning(f"Error fetching entries for {feed_url}: {e}")
             return None
 
-    async def _notify_users(self, feed_url: str, entries: List[FeedItem]) -> None:
-        """Notifies subscribed users with their alias and preference"""
+    async def _notify_users(self, feed_url: str, entries: List[FeedItem]) -> tuple:
+        """Notifies subscribed users with their alias and preference.
+
+        Returns (sent, failed, filtered) counts so the caller can decide
+        whether to advance the feed cursor.
+        """
         users = self.db.get_active_users_for_feed(feed_url)
         if not users:
-            return
+            return 0, 0, 0
 
         logger.info(f"Sending {len(entries)} new entries to {len(users)} users for {feed_url}")
 
+        sent = 0
+        failed = 0
+        filtered = 0
         for entry in reversed(entries):
             for user_id, prefers_telegraph, user_alias, filter_rules in users:
                 if filter_rules and not matches_filter(entry, filter_rules):
+                    filtered += 1
+                    logger.info(
+                        "Skipped entry %s for user %s due to filter rules",
+                        entry.id,
+                        user_id,
+                    )
                     continue
                 try:
                     await self._send_entry_to_user(
@@ -157,11 +176,24 @@ class BatchProcess:
                         alias=user_alias,
                         use_telegraph=prefers_telegraph,
                     )
+                    sent += 1
                     # 1.0 second delay between messages to prevent Telegram rate limits
                     await asyncio.sleep(1.0)
                 except Exception as e:
-                    logger.error(f"Error sending to {user_id}: {e}")
+                    failed += 1
+                    logger.error(f"Error sending entry {entry.id} to {user_id}: {e}")
                     traceback.print_exc()
+
+        if filtered or failed:
+            logger.info(
+                "Feed %s: sent %d/%d (filtered %d, failed %d)",
+                feed_url,
+                sent,
+                len(entries) * len(users),
+                filtered,
+                failed,
+            )
+        return sent, failed, filtered
 
     async def _send_entry_to_user(
         self, user_id: int, entry: FeedItem, alias: str, use_telegraph: bool
@@ -170,14 +202,34 @@ class BatchProcess:
         post_link = entry.source_link or entry.link
         post_title = entry.title or "No Title"
 
-        message, keyboard = feed_message.send_feed(
-            telegraph=use_telegraph,
-            alias=alias,
-            post_link=post_link,
-            post_title=post_title,
-            tags=entry.tags,
-            summary=entry.summary or "",
-        )
+        # Message building performs blocking network I/O (Telegraph tiers:
+        # RSS content, Trafilatura, newspaper4k, Jina). Run it off the event
+        # loop so one slow/hanging article cannot freeze polling entirely,
+        # and bound it so a hang is abandoned instead of blocking forever.
+        try:
+            message, keyboard = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: feed_message.send_feed(
+                        telegraph=use_telegraph,
+                        alias=alias,
+                        post_link=post_link,
+                        post_title=post_title,
+                        tags=entry.tags,
+                        summary=entry.summary or "",
+                    )
+                ),
+                timeout=90,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Message build timed out for entry {entry.id}, using original link")
+            message, keyboard = feed_message.send_feed(
+                telegraph=False,
+                alias=alias,
+                post_link=post_link,
+                post_title=post_title,
+                tags=entry.tags,
+                summary=entry.summary or "",
+            )
 
         try:
             await self.bot.bot.send_message(

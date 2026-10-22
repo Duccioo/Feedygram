@@ -34,6 +34,7 @@ class TestProcessing(unittest.TestCase):
     def setUp(self):
         self.mock_db = MagicMock()
         self.mock_bot = MagicMock()
+        self.mock_bot.bot.send_message = AsyncMock()
         self.mock_provider = MagicMock()
         self.processor = BatchProcess(
             database=self.mock_db,
@@ -140,6 +141,32 @@ class TestProcessing(unittest.TestCase):
             last_title="Newest",
             last_entry_id="item-new",
         )
+
+    def test_process_single_feed_failed_sends_keep_cursor(self):
+        """When all sends fail transiently, cursor must NOT advance (retry next tick)"""
+        import asyncio
+
+        items = [
+            FeedItem(id="item-new", title="Newest", link="https://example.com/new"),
+        ]
+        self.mock_provider.fetch_entries.return_value = items
+        self.mock_db.get_active_users_for_feed.return_value = [
+            (12345, False, "TestFeed", "")
+        ]
+        self.mock_bot.bot.send_message = AsyncMock(side_effect=Exception("net down"))
+
+        async def _test():
+            await self.processor._process_single_feed(
+                feed_url="https://example.com/rss",
+                last_updated=None,
+                last_title="",
+                last_entry_id="item-old",
+            )
+
+        asyncio.run(_test())
+
+        self.mock_db.update_feed.assert_not_called()
+        self.mock_db.record_feed_entries.assert_not_called()
 
     def test_run_skips_when_previous_run_in_progress(self):
         """A new tick must not overlap a still-running batch"""

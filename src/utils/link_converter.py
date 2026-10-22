@@ -43,11 +43,11 @@ def _get_telegraph_token() -> Optional[str]:
         _telegraph_token = env_token
         return _telegraph_token
 
-    # Try reading from SQLite bot_settings
+    # Try reading from SQLite bot_settings (same datastore as the bot)
     db_handler = None
     try:
         from utils.database import DatabaseHandler
-        db_handler = DatabaseHandler("database", "data.db")
+        db_handler = DatabaseHandler("database", "data", "datastore.db")
         db_token = db_handler.get_setting("telegraph_token")
         if db_token:
             _telegraph_token = db_token
