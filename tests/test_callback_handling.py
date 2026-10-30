@@ -170,6 +170,13 @@ class TestCallbackHandling(unittest.IsolatedAsyncioTestCase):
             parsed_size = int(os.environ.get("CALLBACK_CACHE_SIZE", "2048"))
             self.assertEqual(parsed_size, 4096)
 
+    def test_get_main_menu_keyboard_admin_vs_normal(self):
+        from bot import get_main_menu_keyboard, ADMIN_MENU_KEYBOARD, MAIN_MENU_KEYBOARD
+
+        with patch.dict(os.environ, {"ADMIN_USER_ID": "99999"}):
+            self.assertIs(get_main_menu_keyboard(99999), ADMIN_MENU_KEYBOARD)
+            self.assertIs(get_main_menu_keyboard(12345), MAIN_MENU_KEYBOARD)
+
 
 if __name__ == "__main__":
     unittest.main()

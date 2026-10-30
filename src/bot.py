@@ -1,12 +1,11 @@
 import os
 import sys
 import html
-import types
 import random
 import pathlib
 import logging
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -30,22 +29,23 @@ from telegram import (
     KeyboardButton,
 )
 
-try:
-    from telegram.request import HTTPXRequest
-except Exception:
-    HTTPXRequest = None
-
-try:
-    import httpx
-except Exception:
-    httpx = None
-
 MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton("📖 My Feeds"), KeyboardButton("🔍 Explore Feeds")],
         [KeyboardButton("➕ Add Feed"), KeyboardButton("📥 Get Feeds")],
         [KeyboardButton("🗑️ Remove Feed"), KeyboardButton("⚙️ Keyword Filters")],
         [KeyboardButton("💾 Backup & OPML"), KeyboardButton("❓ Help & Info")],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("📖 My Feeds"), KeyboardButton("🔍 Explore Feeds")],
+        [KeyboardButton("➕ Add Feed"), KeyboardButton("📥 Get Feeds")],
+        [KeyboardButton("🗑️ Remove Feed"), KeyboardButton("⚙️ Keyword Filters")],
+        [KeyboardButton("💾 Backup & OPML"), KeyboardButton("❓ Help & Info")],
+        [KeyboardButton("🛡️ Admin Panel")],
     ],
     resize_keyboard=True,
 )
@@ -86,10 +86,15 @@ from command.admin import (
 )
 
 
+def get_main_menu_keyboard(user_id: Optional[int] = None) -> ReplyKeyboardMarkup:
+    """Returns the reply keyboard menu, including the Admin Panel button for admins."""
+    if is_admin(user_id):
+        return ADMIN_MENU_KEYBOARD
+    return MAIN_MENU_KEYBOARD
+
+
 # Logging configuration
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 load_dotenv(override=True)
@@ -137,35 +142,6 @@ class Feedergraph(object):
         except ValueError:
             raise ValueError("UPDATE_INTERVAL must be an integer (in seconds).")
 
-    @staticmethod
-    def _build_httpx_request(pool_size: int):
-        if HTTPXRequest is None or not isinstance(HTTPXRequest, type):
-            return None
-        httpx_kwargs: Dict[str, Any] = {}
-        if isinstance(httpx, types.ModuleType) and hasattr(httpx, "AsyncHTTPTransport"):
-            try:
-                limits = httpx.Limits(
-                    max_connections=pool_size,
-                    max_keepalive_connections=min(pool_size, 32),
-                    keepalive_expiry=60.0,
-                )
-                httpx_kwargs["transport"] = httpx.AsyncHTTPTransport(
-                    local_address="0.0.0.0",
-                    retries=2,
-                    limits=limits,
-                )
-            except Exception as e:
-                logger.debug(f"Could not configure custom AsyncHTTPTransport: {e}")
-
-        return HTTPXRequest(
-            connection_pool_size=pool_size,
-            connect_timeout=30.0,
-            read_timeout=30.0,
-            write_timeout=30.0,
-            pool_timeout=30.0,
-            httpx_kwargs=httpx_kwargs or None,
-        )
-
     def _init_bot(self, token: str) -> None:
         data_path = pathlib.Path(__file__).parent / "database" / "data"
         persistence_path = data_path / "bot_persistence.pickle"
@@ -180,20 +156,22 @@ class Feedergraph(object):
             ),
         )
 
-        builder = (
+        self.bot = (
             Application.builder()
             .token(token)
             .concurrent_updates(True)
             .persistence(persistence)
             .arbitrary_callback_data(self.callback_cache_size)
+            .connect_timeout(30.0)
+            .read_timeout(30.0)
+            .write_timeout(30.0)
+            .pool_timeout(30.0)
+            .get_updates_connect_timeout(30.0)
+            .get_updates_read_timeout(30.0)
+            .get_updates_write_timeout(30.0)
+            .get_updates_pool_timeout(30.0)
+            .build()
         )
-
-        bot_request = self._build_httpx_request(pool_size=64)
-        updates_request = self._build_httpx_request(pool_size=8)
-        if bot_request is not None and updates_request is not None:
-            builder = builder.request(bot_request).get_updates_request(updates_request)
-
-        self.bot = builder.build()
         self.job_queue = self.bot.job_queue
 
     def _register_handlers(self) -> None:
@@ -306,7 +284,7 @@ class Feedergraph(object):
                     f"{bip_bop()}Welcome back! All set.{bip_bop()}\n\n"
                     "Use the buttons below to manage your feeds or send me a link directly!",
                     parse_mode="HTML",
-                    reply_markup=MAIN_MENU_KEYBOARD,
+                    reply_markup=get_main_menu_keyboard(user.id),
                 )
         except Exception as e:
             logger.error(f"Error during /start: {e}")
@@ -318,7 +296,11 @@ class Feedergraph(object):
             "Tap the buttons below to discover popular feeds, view your subscriptions, or send me any website URL to follow it instantly!\n\n"
             f"If you need help, tap <b>❓ Help & Info</b> or type <b>/help</b>.{bip_bop()}"
         )
-        await update.message.reply_text(welcome_msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
+        await update.message.reply_text(
+            welcome_msg,
+            parse_mode="HTML",
+            reply_markup=get_main_menu_keyboard(user.id),
+        )
         self.db.add_user(
             telegram_id=user.id,
             username=user.username,
@@ -846,10 +828,11 @@ class Feedergraph(object):
 
     async def help(self, update, context):
         """Sends help message with quick start keyboard"""
+        user_id = update.effective_user.id if update.effective_user else None
         await update.effective_message.reply_text(
             help_message(),
             parse_mode="HTML",
-            reply_markup=MAIN_MENU_KEYBOARD,
+            reply_markup=get_main_menu_keyboard(user_id),
         )
 
     async def stop(self, update, context):
@@ -1519,7 +1502,11 @@ class Feedergraph(object):
                 "3️⃣ Or use <b>/add</b> with a custom name:\n"
                 "<code>/add https://duccio.me/rss My Blog</code>"
             )
-            await update.effective_message.reply_text(msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
+            await update.effective_message.reply_text(
+                msg,
+                parse_mode="HTML",
+                reply_markup=get_main_menu_keyboard(user_id),
+            )
         elif text in ["📥 Get Feeds", "Get Feeds", "📥 Scarica Notizie", "Scarica Notizie"]:
             await self.get(update, context)
         elif text in ["🗑️ Remove Feed", "Remove Feed", "🗑️ Rimuovi Feed", "Rimuovi Feed"]:
@@ -1532,9 +1519,15 @@ class Feedergraph(object):
                 "• To <b>export</b> all your feeds in standard OPML format use <code>/export</code>\n"
                 "• To <b>import</b> an OPML file send the <code>.opml</code> or <code>.xml</code> file directly in this chat!"
             )
-            await update.effective_message.reply_text(msg, parse_mode="HTML", reply_markup=MAIN_MENU_KEYBOARD)
+            await update.effective_message.reply_text(
+                msg,
+                parse_mode="HTML",
+                reply_markup=get_main_menu_keyboard(user_id),
+            )
         elif text in ["❓ Help & Info", "Help & Info", "❓ Aiuto & Info", "Aiuto & Info"]:
             await self.help(update, context)
+        elif text in ["🛡️ Admin Panel", "Admin Panel", "🛠️ Admin", "Admin"]:
+            await self.admin_command(update, context)
         elif text.startswith("http://") or text.startswith("https://"):
             # User pasted a URL directly: add with auto-discovery
             context.args = text.split()

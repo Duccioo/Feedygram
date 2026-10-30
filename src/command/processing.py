@@ -237,15 +237,14 @@ class BatchProcess:
             ):
                 delivered_entries.append(entry)
 
-        if filtered or failed:
-            logger.info(
-                "Feed %s: sent %d/%d (filtered %d, failed %d)",
-                feed_url,
-                sent,
-                len(entries) * len(users),
-                filtered,
-                failed,
-            )
+        logger.info(
+            "Feed %s: sent %d/%d (filtered %d, failed %d)",
+            feed_url,
+            sent,
+            len(entries) * len(users),
+            filtered,
+            failed,
+        )
         return sent, failed, filtered
 
     async def _send_entry_to_user(
