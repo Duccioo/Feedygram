@@ -5,16 +5,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils.make_text import number_to_emoji, random_emoji
 
 
-def list_handler(db_telegraph, alias, url, index):
+def list_handler(db_telegraph, alias, url, index, allow_telegraph_toggle: bool = False):
+    safe_alias = html.escape(str(alias))
+    safe_url = html.escape(str(url))
+
+    if not allow_telegraph_toggle:
+        message = (
+            f"{number_to_emoji(str(index + 1))}: '<b>{safe_alias}</b>'\n"
+            f"Link: <code>{safe_url}</code>"
+        )
+        return message, None
+
     if db_telegraph:
         new_link = "✳️Normal Link✳️"
         old_link = "🤙Telegraph Link🤙"
     else:
         new_link = "🤙Telegraph Link🤙"
         old_link = "✳️Normal Link✳️"
-
-    safe_alias = html.escape(str(alias))
-    safe_url = html.escape(str(url))
 
     message = (
         f"{number_to_emoji(str(index + 1))}: '<b>{safe_alias}</b>'\n"
@@ -72,5 +79,3 @@ def about_message(number: int):
         f"There are currently {number_to_emoji(number)} active users\n"
     )
     return message
-
-

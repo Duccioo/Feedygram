@@ -10,6 +10,7 @@ class FeedHandler:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
     )
+    REQUEST_TIMEOUT = 15
 
     def __init__(self, url: str) -> None:
         self.url = self.format_url_string(url)
@@ -26,10 +27,25 @@ class FeedHandler:
         return string
 
     @classmethod
+    def _fetch_and_parse(cls, url: str, timeout: Optional[int] = None) -> Any:
+        """
+        Downloads feed content with an explicit HTTP timeout before passing it
+        to feedparser, preventing urllib socket hangs from blocking worker threads.
+        """
+        req_timeout = timeout or cls.REQUEST_TIMEOUT
+        resp = requests.get(
+            url,
+            headers={"User-Agent": cls.USER_AGENT},
+            timeout=req_timeout,
+        )
+        resp.raise_for_status()
+        return feedparser.parse(resp.content)
+
+    @classmethod
     def parse_feed(cls, url: str) -> Optional[Any]:
         url = cls.format_url_string(url)
         try:
-            feed = feedparser.parse(url, agent=cls.USER_AGENT)
+            feed = cls._fetch_and_parse(url)
             if hasattr(feed, "feed") and (getattr(feed.feed, "title", None) or len(feed.entries) > 0):
                 return feed
             return None
@@ -62,8 +78,14 @@ class FeedHandler:
         Returns a tuple: (True/False, error_message_or_None).
         """
         url = cls.format_url_string(url)
+        from utils.twitter import extract_twitter_username, validate_twitter_user
+
+        tw_user = extract_twitter_username(url)
+        if tw_user:
+            return validate_twitter_user(tw_user)
+
         try:
-            feed = feedparser.parse(url, agent=cls.USER_AGENT)
+            feed = cls._fetch_and_parse(url)
         except Exception as e:
             return False, f"Unable to reach feed: {e}"
 
@@ -75,10 +97,6 @@ class FeedHandler:
             return False, f"Feed format error: {feed.bozo_exception}"
 
         if not hasattr(feed, "entries") or len(feed.entries) == 0:
-            from utils.twitter import extract_twitter_username, validate_twitter_user
-            tw_user = extract_twitter_username(url)
-            if tw_user:
-                return validate_twitter_user(tw_user)
             return False, "The feed does not contain any entries."
 
         return True, None
@@ -98,9 +116,6 @@ class FeedHandler:
             return formatted
 
         try:
-            import requests
-            from urllib.parse import urljoin
-
             headers = {"User-Agent": cls.USER_AGENT}
             resp = requests.get(formatted, headers=headers, timeout=5)
             if resp.status_code != 200 or not resp.text:
@@ -162,7 +177,6 @@ class FeedHandler:
 
         return None
 
-
     @staticmethod
     def get_entry_id(entry: Any) -> str:
         """
@@ -213,13 +227,3 @@ class FeedHandler:
             pass
 
         return link
-
-
-if __name__ == "__main__":
-    link_1 = "https://duccioo.github.io/GitHubTrendingRSS/feeds/all_languages_weekly.xml"
-    feed = FeedHandler.parse_feed(link_1)
-    if feed and feed.entries:
-        print("Header:", getattr(feed.feed, "title", "No Title"))
-        print("First article ID:", FeedHandler.get_entry_id(feed.entries[0]))
-
-

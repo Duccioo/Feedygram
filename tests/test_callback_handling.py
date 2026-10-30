@@ -29,6 +29,7 @@ for mod in [
             sys.modules[mod] = MagicMock()
 
 from bot import validate_callback_data, Feedergraph
+from command.other_commands import list_handler
 
 
 class FakeInvalidCallbackData:
@@ -77,6 +78,84 @@ class TestCallbackHandling(unittest.IsolatedAsyncioTestCase):
 
         # Should not raise any error
         await bot_instance.handle_invalid_callback(mock_update, mock_context)
+
+    def test_list_handler_hides_telegraph_toggle_for_normal_users(self):
+        msg, kb = list_handler(
+            db_telegraph=False,
+            alias="TechFeed",
+            url="https://example.com/rss",
+            index=0,
+            allow_telegraph_toggle=False,
+        )
+        self.assertIn("TechFeed", msg)
+        self.assertNotIn("Default link type", msg)
+        self.assertIsNone(kb)
+
+    def test_list_handler_shows_telegraph_toggle_for_admins(self):
+        msg, kb = list_handler(
+            db_telegraph=False,
+            alias="TechFeed",
+            url="https://example.com/rss",
+            index=0,
+            allow_telegraph_toggle=True,
+        )
+        self.assertIn("Default link type", msg)
+        self.assertIsNotNone(kb)
+
+    async def test_change_list_type_blocks_normal_user(self):
+        bot_instance = object.__new__(Feedergraph)
+        bot_instance.db = MagicMock()
+
+        mock_query = AsyncMock()
+        mock_query.from_user = MagicMock(id=2222)
+        mock_query.data = {
+            "option": "change_database",
+            "alias": "MyFeed",
+            "url": "https://example.com/rss",
+            "set_telegraph": True,
+        }
+        mock_update = MagicMock(callback_query=mock_query)
+        mock_context = MagicMock()
+
+        with patch.dict(os.environ, {"ADMIN_USER_ID": "9999"}):
+            await bot_instance.change_list_type(mock_update, mock_context)
+
+        bot_instance.db.update_user_bookmark.assert_called_once_with(
+            2222,
+            url="https://example.com/rss",
+            alias="MyFeed",
+            telegraph=False,
+        )
+        mock_query.edit_message_text.assert_not_awaited()
+
+    async def test_update_message_allows_on_demand_telegraph_for_any_user(self):
+        bot_instance = object.__new__(Feedergraph)
+
+        mock_query = AsyncMock()
+        mock_query.data = {
+            "option": "change_feed_link",
+            "set_telegraph": True,
+            "alias": "MyFeed",
+            "link": "https://example.com/post",
+            "title": "Post Title",
+        }
+        mock_update = MagicMock(callback_query=mock_query)
+        mock_context = MagicMock()
+
+        with patch("command.feed_message.send_feed", return_value=("Converted HTML", "MockKB")) as mock_send_feed:
+            await bot_instance.update_message(mock_update, mock_context)
+
+        mock_send_feed.assert_called_once_with(
+            telegraph=True,
+            alias="MyFeed",
+            post_link="https://example.com/post",
+            post_title="Post Title",
+        )
+        mock_query.edit_message_text.assert_awaited_once_with(
+            text="Converted HTML",
+            parse_mode="HTML",
+            reply_markup="MockKB",
+        )
 
     def test_callback_cache_size_default(self):
         with patch.dict(os.environ, {}, clear=False):

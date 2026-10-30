@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import traceback
-from typing import Optional, List, Any, Set
+from typing import Optional, List, Any
 from telegram import LinkPreviewOptions
 from telegram.error import RetryAfter, TelegramError
 
@@ -9,10 +9,22 @@ from telegram.error import RetryAfter, TelegramError
 from utils.database import DatabaseHandler
 from utils.filters import matches_filter
 from utils.make_text import clean_feed_text
+from command.admin import is_admin
 import command.feed_message as feed_message
 from providers import BaseFeedProvider, FeedItem, get_feed_provider
 
 logger = logging.getLogger(__name__)
+
+_RETRY_AFTER_TYPES = (
+    (RetryAfter,)
+    if isinstance(RetryAfter, type) and issubclass(RetryAfter, BaseException)
+    else ()
+)
+_TELEGRAM_ERROR_TYPES = (
+    (TelegramError,)
+    if isinstance(TelegramError, type) and issubclass(TelegramError, BaseException)
+    else ()
+)
 
 
 class BatchProcess:
@@ -43,7 +55,7 @@ class BatchProcess:
             if not feeds:
                 return
 
-            # ponytail: bounded concurrency limit to avoid network / rate limit spikes
+            # Bounded concurrency limit to avoid network / rate limit spikes
             sem = asyncio.Semaphore(5)
 
             async def _process_worker(url: str, last_updated, last_title: str, last_entry_id: Optional[str]):
@@ -71,7 +83,7 @@ class BatchProcess:
     async def _process_single_feed(
         self, feed_url: str, last_updated, last_title: str, last_entry_id: Optional[str]
     ) -> None:
-        """Processes a single feed"""
+        """Processes a single feed and persists progress even if cancelled mid-batch."""
         try:
             entries = await self._safe_fetch_entries(feed_url)
             if not entries:
@@ -86,20 +98,33 @@ class BatchProcess:
             if not new_entries:
                 return
 
-            sent, failed, filtered = await self._notify_users(feed_url, new_entries)
-            if sent == 0 and failed > 0 and filtered == 0:
-                # All sends failed transiently: keep cursor so entries are retried next tick
-                logger.warning(
-                    "All %d sends failed for %s, keeping cursor for retry", failed, feed_url
+            delivered_entries: List[FeedItem] = []
+            sent = 0
+            failed = 0
+            filtered = 0
+            try:
+                sent, failed, filtered = await self._notify_users(
+                    feed_url, new_entries, delivered_entries
                 )
-                return
-            latest_entry = new_entries[0]
-            self._update_feed_metadata(feed_url, latest_entry)
+            finally:
+                if delivered_entries:
+                    latest_delivered = delivered_entries[-1]
+                    self._update_feed_metadata(feed_url, latest_delivered)
 
-            # Record up to 50 recent entry IDs in history to prevent duplicates
-            all_entry_ids = [str(e.id) for e in entries[:50]]
-            self.db.record_feed_entries(feed_url, all_entry_ids, max_keep=50)
+                    if len(delivered_entries) == len(new_entries):
+                        recorded_ids = [str(e.id) for e in entries[:50]]
+                    else:
+                        recorded_ids = [str(e.id) for e in delivered_entries]
+                    self.db.record_feed_entries(feed_url, recorded_ids, max_keep=50)
+                elif sent == 0 and failed > 0 and filtered == 0:
+                    logger.warning(
+                        "All %d sends failed for %s, keeping cursor for retry",
+                        failed,
+                        feed_url,
+                    )
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error(f"Error processing feed {feed_url}: {e}")
             traceback.print_exc()
@@ -144,7 +169,12 @@ class BatchProcess:
             logger.warning(f"Error fetching entries for {feed_url}: {e}")
             return None
 
-    async def _notify_users(self, feed_url: str, entries: List[FeedItem]) -> tuple:
+    async def _notify_users(
+        self,
+        feed_url: str,
+        entries: List[FeedItem],
+        delivered_entries: Optional[List[FeedItem]] = None,
+    ) -> tuple:
         """Notifies subscribed users with their alias and preference.
 
         Returns (sent, failed, filtered) counts so the caller can decide
@@ -160,29 +190,52 @@ class BatchProcess:
         failed = 0
         filtered = 0
         for entry in reversed(entries):
+            entry_sent = 0
+            entry_failed = 0
+            entry_filtered = 0
+
             for user_id, prefers_telegraph, user_alias, filter_rules in users:
                 if filter_rules and not matches_filter(entry, filter_rules):
                     filtered += 1
+                    entry_filtered += 1
                     logger.info(
                         "Skipped entry %s for user %s due to filter rules",
                         entry.id,
                         user_id,
                     )
                     continue
+
+                # Only admins can use automatic per-feed Telegraph conversion;
+                # normal users receive the normal link and can convert on-demand via button.
+                effective_telegraph = bool(prefers_telegraph) and is_admin(user_id)
+
                 try:
-                    await self._send_entry_to_user(
+                    res = await self._send_entry_to_user(
                         user_id=user_id,
                         entry=entry,
                         alias=user_alias,
-                        use_telegraph=prefers_telegraph,
+                        use_telegraph=effective_telegraph,
                     )
-                    sent += 1
-                    # 1.0 second delay between messages to prevent Telegram rate limits
-                    await asyncio.sleep(1.0)
+                    if res is False:
+                        failed += 1
+                        entry_failed += 1
+                    else:
+                        sent += 1
+                        entry_sent += 1
+                        # 1.0 second delay between messages to prevent Telegram rate limits
+                        await asyncio.sleep(1.0)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     failed += 1
+                    entry_failed += 1
                     logger.error(f"Error sending entry {entry.id} to {user_id}: {e}")
                     traceback.print_exc()
+
+            if delivered_entries is not None and (
+                entry_sent > 0 or (entry_failed == 0 and entry_filtered > 0)
+            ):
+                delivered_entries.append(entry)
 
         if filtered or failed:
             logger.info(
@@ -197,31 +250,37 @@ class BatchProcess:
 
     async def _send_entry_to_user(
         self, user_id: int, entry: FeedItem, alias: str, use_telegraph: bool
-    ) -> None:
-        """Sends a single entry to a user"""
+    ) -> bool:
+        """Sends a single entry to a user. Returns True if delivered (or user deactivated), False if failed."""
         post_link = entry.source_link or entry.link
         post_title = entry.title or "No Title"
 
-        # Message building performs blocking network I/O (Telegraph tiers:
-        # RSS content, Trafilatura, newspaper4k, Jina). Run it off the event
-        # loop so one slow/hanging article cannot freeze polling entirely,
-        # and bound it so a hang is abandoned instead of blocking forever.
-        try:
-            message, keyboard = await asyncio.wait_for(
-                asyncio.to_thread(
-                    lambda: feed_message.send_feed(
-                        telegraph=use_telegraph,
-                        alias=alias,
-                        post_link=post_link,
-                        post_title=post_title,
-                        tags=entry.tags,
-                        summary=entry.summary or "",
-                    )
-                ),
-                timeout=90,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"Message build timed out for entry {entry.id}, using original link")
+        if use_telegraph:
+            try:
+                message, keyboard = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        lambda: feed_message.send_feed(
+                            telegraph=True,
+                            alias=alias,
+                            post_link=post_link,
+                            post_title=post_title,
+                            tags=entry.tags,
+                            summary=entry.summary or "",
+                        )
+                    ),
+                    timeout=45,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Message build timed out for entry {entry.id}, using original link")
+                message, keyboard = feed_message.send_feed(
+                    telegraph=False,
+                    alias=alias,
+                    post_link=post_link,
+                    post_title=post_title,
+                    tags=entry.tags,
+                    summary=entry.summary or "",
+                )
+        else:
             message, keyboard = feed_message.send_feed(
                 telegraph=False,
                 alias=alias,
@@ -231,31 +290,51 @@ class BatchProcess:
                 summary=entry.summary or "",
             )
 
-        try:
-            await self.bot.bot.send_message(
-                chat_id=user_id,
-                text=message,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-                link_preview_options=LinkPreviewOptions(prefer_small_media=True),
-            )
-        except RetryAfter as e:
-            logger.warning(f"Rate limit for {user_id}: waiting {e.retry_after}s")
-            await asyncio.sleep(e.retry_after)
-            await self.bot.bot.send_message(
-                chat_id=user_id,
-                text=message,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-                link_preview_options=LinkPreviewOptions(prefer_small_media=True),
-            )
-        except TelegramError as e:
-            err_msg = str(e).lower()
-            if "chat not found" in err_msg or "bot was blocked" in err_msg or "user is deactivated" in err_msg:
-                logger.info(f"Deactivating user {user_id} due to error: {e}")
-                self.db.deactivate_user(user_id)
-            else:
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                await self.bot.bot.send_message(
+                    chat_id=user_id,
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                    link_preview_options=LinkPreviewOptions(prefer_small_media=True),
+                )
+                return True
+            except _RETRY_AFTER_TYPES as e:
+                retry_secs = getattr(e, "retry_after", 5)
+                logger.warning(f"Rate limit for {user_id}: waiting {retry_secs}s")
+                await asyncio.sleep(retry_secs)
+            except _TELEGRAM_ERROR_TYPES as e:
+                err_msg = str(e).lower()
+                if any(
+                    perm_err in err_msg
+                    for perm_err in (
+                        "chat not found",
+                        "bot was blocked",
+                        "user is deactivated",
+                        "chat_write_forbidden",
+                        "have no rights to send a message",
+                    )
+                ):
+                    logger.info(f"Deactivating user {user_id} due to permanent error: {e}")
+                    self.db.deactivate_user(user_id)
+                    return True
+
+                if attempt < max_attempts and any(
+                    trans in err_msg
+                    for trans in ("timed out", "timeout", "network", "connection", "bad gateway", "gateway timeout")
+                ):
+                    logger.warning(
+                        f"Transient Telegram error for {user_id} (attempt {attempt}/{max_attempts}): {e}"
+                    )
+                    await asyncio.sleep(1.5 * attempt)
+                    continue
+
                 logger.error(f"Non-fatal Telegram error for {user_id}: {e}")
+                return False
+
+        return False
 
     def _update_feed_metadata(self, feed_url: str, latest_entry: FeedItem) -> None:
         """Updates feed metadata, including latest entry ID."""
@@ -266,7 +345,6 @@ class BatchProcess:
             last_entry_id=str(latest_entry.id),
         )
 
-
     @property
     def is_running(self) -> bool:
         return self._is_running
@@ -274,5 +352,3 @@ class BatchProcess:
     @is_running.setter
     def is_running(self, value: bool) -> None:
         self._is_running = value
-
-

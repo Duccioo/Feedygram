@@ -168,6 +168,74 @@ class TestProcessing(unittest.TestCase):
         self.mock_db.update_feed.assert_not_called()
         self.mock_db.record_feed_entries.assert_not_called()
 
+    def test_process_single_feed_partial_delivery_saves_progress(self):
+        """When first (oldest) entry succeeds and second (newest) fails, progress is saved up to first entry"""
+        import asyncio
+
+        items = [
+            FeedItem(id="item-new", title="Newest", link="https://example.com/new"),
+            FeedItem(id="item-old", title="Oldest", link="https://example.com/old"),
+        ]
+        self.mock_provider.fetch_entries.return_value = items
+        self.mock_db.get_active_users_for_feed.return_value = [
+            (12345, False, "TestFeed", "")
+        ]
+        # First send (item-old) succeeds, second send (item-new) fails
+        self.mock_bot.bot.send_message = AsyncMock(
+            side_effect=[MagicMock(), Exception("Timed out")]
+        )
+
+        async def _test():
+            with patch("asyncio.sleep", new=AsyncMock()):
+                await self.processor._process_single_feed(
+                    feed_url="https://example.com/rss",
+                    last_updated=None,
+                    last_title="",
+                    last_entry_id=None,
+                )
+
+        asyncio.run(_test())
+
+        self.mock_db.update_feed.assert_called_once_with(
+            url="https://example.com/rss",
+            last_updated=None,
+            last_title="Oldest",
+            last_entry_id="item-old",
+        )
+        self.mock_db.record_feed_entries.assert_called_once_with(
+            "https://example.com/rss", ["item-old"], max_keep=50
+        )
+
+    def test_non_admin_prefers_telegraph_ignored_in_batch(self):
+        """Normal (non-admin) users must not trigger automatic Telegraph conversion during batch polling"""
+        import asyncio
+
+        items = [
+            FeedItem(id="item-1", title="Article 1", link="https://example.com/1"),
+        ]
+        # Non-admin user 1111 has prefers_telegraph=True in DB; admin user 9999 has prefers_telegraph=True
+        self.mock_db.get_active_users_for_feed.return_value = [
+            (1111, True, "UserFeed", ""),
+            (9999, True, "AdminFeed", ""),
+        ]
+
+        seen_telegraph_flags = []
+
+        async def fake_send(user_id, entry, alias, use_telegraph):
+            seen_telegraph_flags.append((user_id, use_telegraph))
+            return True
+
+        self.processor._send_entry_to_user = fake_send
+
+        async def _test():
+            with patch.dict(os.environ, {"ADMIN_USER_ID": "9999"}):
+                with patch("asyncio.sleep", new=AsyncMock()):
+                    await self.processor._notify_users("https://example.com/rss", items)
+
+        asyncio.run(_test())
+
+        self.assertEqual(seen_telegraph_flags, [(1111, False), (9999, True)])
+
     def test_run_skips_when_previous_run_in_progress(self):
         """A new tick must not overlap a still-running batch"""
         import asyncio

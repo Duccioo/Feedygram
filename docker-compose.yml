@@ -5,13 +5,18 @@ services:
     build: .
     container_name: feedygram
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-300}
       - FEED_PROVIDER=local
       - ADMIN_USER_ID=${ADMIN_USER_ID:-}
       - MAX_FEEDS_PER_USER=${MAX_FEEDS_PER_USER:-15}
-      - CALLBACK_CACHE_SIZE=${CALLBACK_CACHE_SIZE:-2048}
+      - CALLBACK_CACHE_SIZE=${CALLBACK_CACHE_SIZE:-16384}
+    labels:
+      - "com.centurylinklabs.watchtower.scope=feedergraph"
     volumes:
       # Persistenza del database SQLite
       - feedygram_data:/app/src/database/data
@@ -28,6 +33,7 @@ services:
     environment:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=86400
+      - WATCHTOWER_SCOPE=feedergraph
     networks:
       - feedygram_net
 

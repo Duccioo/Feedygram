@@ -1,6 +1,7 @@
 import os
 import sys
 import html
+import types
 import random
 import pathlib
 import logging
@@ -28,6 +29,16 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
 )
+
+try:
+    from telegram.request import HTTPXRequest
+except Exception:
+    HTTPXRequest = None
+
+try:
+    import httpx
+except Exception:
+    httpx = None
 
 MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
@@ -77,6 +88,8 @@ from command.admin import (
 
 # Logging configuration
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 load_dotenv(override=True)
@@ -100,9 +113,9 @@ class Feedergraph(object):
         self._validate_config(telegram_token, update_interval)
 
         try:
-            self.callback_cache_size = int(os.environ.get("CALLBACK_CACHE_SIZE", "2048"))
+            self.callback_cache_size = int(os.environ.get("CALLBACK_CACHE_SIZE", "16384"))
         except ValueError:
-            self.callback_cache_size = 2048
+            self.callback_cache_size = 16384
 
         data_path = pathlib.Path(__file__).parent / "database" / "data"
         if not os.path.exists(data_path):
@@ -124,6 +137,35 @@ class Feedergraph(object):
         except ValueError:
             raise ValueError("UPDATE_INTERVAL must be an integer (in seconds).")
 
+    @staticmethod
+    def _build_httpx_request(pool_size: int):
+        if HTTPXRequest is None or not isinstance(HTTPXRequest, type):
+            return None
+        httpx_kwargs: Dict[str, Any] = {}
+        if isinstance(httpx, types.ModuleType) and hasattr(httpx, "AsyncHTTPTransport"):
+            try:
+                limits = httpx.Limits(
+                    max_connections=pool_size,
+                    max_keepalive_connections=min(pool_size, 32),
+                    keepalive_expiry=60.0,
+                )
+                httpx_kwargs["transport"] = httpx.AsyncHTTPTransport(
+                    local_address="0.0.0.0",
+                    retries=2,
+                    limits=limits,
+                )
+            except Exception as e:
+                logger.debug(f"Could not configure custom AsyncHTTPTransport: {e}")
+
+        return HTTPXRequest(
+            connection_pool_size=pool_size,
+            connect_timeout=30.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=30.0,
+            httpx_kwargs=httpx_kwargs or None,
+        )
+
     def _init_bot(self, token: str) -> None:
         data_path = pathlib.Path(__file__).parent / "database" / "data"
         persistence_path = data_path / "bot_persistence.pickle"
@@ -138,14 +180,20 @@ class Feedergraph(object):
             ),
         )
 
-        self.bot = (
+        builder = (
             Application.builder()
             .token(token)
             .concurrent_updates(True)
             .persistence(persistence)
             .arbitrary_callback_data(self.callback_cache_size)
-            .build()
         )
+
+        bot_request = self._build_httpx_request(pool_size=64)
+        updates_request = self._build_httpx_request(pool_size=8)
+        if bot_request is not None and updates_request is not None:
+            builder = builder.request(bot_request).get_updates_request(updates_request)
+
+        self.bot = builder.build()
         self.job_queue = self.bot.job_queue
 
     def _register_handlers(self) -> None:
@@ -204,6 +252,28 @@ class Feedergraph(object):
         for handler in handlers:
             self.bot.add_handler(handler)
 
+        if hasattr(self.bot, "add_error_handler"):
+            self.bot.add_error_handler(self.error_handler)
+
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Global error handler for unhandled exceptions in handlers."""
+        logger.warning(f"Unhandled error in update handler: {context.error}")
+
+    @staticmethod
+    async def _safe_answer_query(query, text: Optional[str] = None, show_alert: bool = False) -> None:
+        """Safely answers a callback query without crashing if the query expired."""
+        if query is None:
+            return
+        try:
+            if text is not None:
+                await query.answer(text=text, show_alert=show_alert)
+            elif show_alert:
+                await query.answer(show_alert=True)
+            else:
+                await query.answer()
+        except Exception as e:
+            logger.debug(f"Could not answer callback query (possibly expired): {e}")
+
     def _start_processing(self, interval: str) -> None:
         try:
             interval_int = int(interval)
@@ -259,7 +329,6 @@ class Feedergraph(object):
             is_active=1,
         )
 
-
     async def handle_invalid_callback(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles clicks on expired or invalid callback buttons."""
         query = update.callback_query
@@ -273,20 +342,39 @@ class Feedergraph(object):
                 logger.debug(f"Error answering invalid callback query: {e}")
 
     async def update_message(self, update, context):
-        """Updates a single feed message toggling link type (Normal vs Telegraph)"""
+        """Updates a single feed message toggling link type (Normal vs Telegraph) on-demand."""
         query = update.callback_query
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             data = query.data
             if not isinstance(data, dict):
                 return
             try:
-                message, keyboard = feed_message.send_feed(
-                    telegraph=bool(data.get("set_telegraph")),
-                    alias=data.get("alias", ""),
-                    post_link=data.get("link", ""),
-                    post_title=data.get("title", ""),
-                )
+                want_telegraph = bool(data.get("set_telegraph"))
+                alias = data.get("alias", "")
+                post_link = data.get("link", "")
+                post_title = data.get("title", "")
+
+                if want_telegraph:
+                    message, keyboard = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            lambda: feed_message.send_feed(
+                                telegraph=True,
+                                alias=alias,
+                                post_link=post_link,
+                                post_title=post_title,
+                            )
+                        ),
+                        timeout=60,
+                    )
+                else:
+                    message, keyboard = feed_message.send_feed(
+                        telegraph=False,
+                        alias=alias,
+                        post_link=post_link,
+                        post_title=post_title,
+                    )
+
                 await query.edit_message_text(
                     text=message,
                     parse_mode="HTML",
@@ -296,12 +384,30 @@ class Feedergraph(object):
                 logger.warning(f"Error updating feed message link: {e}")
 
     async def change_list_type(self, update, context):
-        """Updates user default link preference for a feed (Normal Link vs Telegraph)"""
+        """Updates default link preference for a feed (Admin only)."""
         query = update.callback_query
         if query is not None:
-            await query.answer()
             telegram_user = query.from_user
             data = query.data
+            if not isinstance(data, dict):
+                await self._safe_answer_query(query)
+                return
+
+            if not is_admin(telegram_user.id):
+                self.db.update_user_bookmark(
+                    telegram_user.id,
+                    url=data["url"],
+                    alias=data["alias"],
+                    telegraph=False,
+                )
+                await self._safe_answer_query(
+                    query,
+                    text="ℹ️ Automatic Telegraph conversion for all links is disabled. Use the button on each notification to convert individual articles!",
+                    show_alert=True,
+                )
+                return
+
+            await self._safe_answer_query(query)
             set_telegraph = bool(data["set_telegraph"])
 
             self.db.update_user_bookmark(
@@ -364,7 +470,7 @@ class Feedergraph(object):
             parts = raw_text.split(maxsplit=2)
             if len(parts) < 2 or not parts[1].strip():
                 message = (
-                    "Oh nono! I could not add the entry😯!\n"
+                    "Oh nono! I could not add the entry😨!\n"
                     + bip_bop()
                     + "I need <b>at least</b> a valid URL, and, if you want, a custom name.\n"
                     + "Try to send a valid URL like this:\n\n"
@@ -394,7 +500,9 @@ class Feedergraph(object):
             else:
                 arg_url = f"https://x.com/{twitter_user}"
 
-            is_parsable, error_message = self.provider.validate_feed(arg_url)
+            is_parsable, error_message = await asyncio.to_thread(
+                self.provider.validate_feed, arg_url
+            )
             if not is_parsable:
                 safe_user = html.escape(target_input)
                 safe_err = html.escape(str(error_message))
@@ -409,29 +517,31 @@ class Feedergraph(object):
             if custom_alias:
                 arg_entry = custom_alias
             else:
-                tw_title = self.provider.get_feed_title(arg_url)
+                tw_title = await asyncio.to_thread(self.provider.get_feed_title, arg_url)
                 arg_entry = f"🐦 {tw_title.strip()}" if tw_title else f"🐦 @{twitter_user}"
         elif yt_feed_url:
             arg_url = yt_feed_url
             if custom_alias:
                 arg_entry = custom_alias
             else:
-                yt_title = self.provider.get_feed_title(arg_url)
+                yt_title = await asyncio.to_thread(self.provider.get_feed_title, arg_url)
                 arg_entry = f"▶️ {yt_title.strip()}" if yt_title else f"▶️ YouTube ({target_input})"
         elif reddit_feed_url:
             arg_url = reddit_feed_url
             if custom_alias:
                 arg_entry = custom_alias
             else:
-                r_title = self.provider.get_feed_title(arg_url)
+                r_title = await asyncio.to_thread(self.provider.get_feed_title, arg_url)
                 arg_entry = f"🤖 {r_title.strip()}" if r_title else f"🤖 {target_input}"
         else:
             # Feed URL auto-discovery if user provided a website homepage or HTML page
-            discovered = FeedHandler.discover_feed_url(target_input)
+            discovered = await asyncio.to_thread(FeedHandler.discover_feed_url, target_input)
             arg_url = discovered or FeedHandler.format_url_string(target_input)
 
             # Validate feed via provider
-            is_parsable, error_message = self.provider.validate_feed(arg_url)
+            is_parsable, error_message = await asyncio.to_thread(
+                self.provider.validate_feed, arg_url
+            )
             if not is_parsable:
                 safe_url = html.escape(arg_url)
                 safe_err = html.escape(str(error_message))
@@ -447,7 +557,7 @@ class Feedergraph(object):
             if custom_alias:
                 arg_entry = custom_alias
             else:
-                feed_title = self.provider.get_feed_title(arg_url)
+                feed_title = await asyncio.to_thread(self.provider.get_feed_title, arg_url)
                 if feed_title and feed_title.strip():
                     arg_entry = f"{random_emoji()} {feed_title.strip()}"
                 else:
@@ -491,40 +601,51 @@ class Feedergraph(object):
             telegram_id=chat_id, url=arg_url, alias=arg_entry, telegraph=False
         )
 
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🔗 Change to Telegraph Link",
-                    callback_data={
-                        "option": "change_database",
-                        "alias": arg_entry,
-                        "url": arg_url,
-                        "set_telegraph": True,
-                    },
-                )
-            ],
-        ]
         safe_alias = html.escape(arg_entry)
-        message = (
-            "WOOW!!🤝"
-            f"{bip_bop()}\nI successfully added (<b>{safe_alias}</b>) to your subscriptions!"
-            f"{bip_bop()}\n👀Look! By default when I find a new post I will send the <b>Normal Link</b>.\n"
-            "If you want to receive <b>Telegraph Links</b> (to open with <u>Instant View</u>) click the button below!"
-        )
-        await msg.reply_text(
-            text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        if is_admin(chat_id):
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "🔗 Change to Telegraph Link",
+                        callback_data={
+                            "option": "change_database",
+                            "alias": arg_entry,
+                            "url": arg_url,
+                            "set_telegraph": True,
+                        },
+                    )
+                ],
+            ]
+            message = (
+                "WOOW!!🤝"
+                f"{bip_bop()}\nI successfully added (<b>{safe_alias}</b>) to your subscriptions!"
+                f"{bip_bop()}\n👀Look! By default when I find a new post I will send the <b>Normal Link</b>.\n"
+                "If you want to receive <b>Telegraph Links</b> (to open with <u>Instant View</u>) click the button below!"
+            )
+            await msg.reply_text(
+                text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            message = (
+                "WOOW!!🤝"
+                f"{bip_bop()}\nI successfully added (<b>{safe_alias}</b>) to your subscriptions!"
+                f"{bip_bop()}\n👀 When I find a new post I will send you the notification, "
+                "and you can convert any article to a <b>Telegraph Link</b> (<u>Instant View</u>) by clicking the button on the notification!"
+            )
+            await msg.reply_text(text=message, parse_mode="HTML")
 
     async def get_n_feed(self, update, context):
         """Sends the latest N articles for the selected feed"""
         query = update.callback_query
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             data = query.data
             chat_id = data["user"]
             num_feeds = int(data.get("number_feed", 1))
 
-            entries = self.provider.fetch_entries(data["url"], num_feeds)
+            entries = await asyncio.to_thread(
+                self.provider.fetch_entries, data["url"], num_feeds
+            )
             if not entries:
                 safe_alias = html.escape(str(data.get("alias", "Feed")))
                 message = (
@@ -539,20 +660,32 @@ class Feedergraph(object):
                 return
 
             db_bookmark = self.db.get_user_bookmark(chat_id, alias=data["alias"])
-            use_telegraph = bool(db_bookmark[3]) if db_bookmark else False
+            use_telegraph = (bool(db_bookmark[3]) if db_bookmark else False) and is_admin(chat_id)
 
             for entry in reversed(entries):
                 post_title = entry.title or "No Title"
                 post_link = entry.source_link or entry.link
 
-                msg_text, reply_markup = feed_message.send_feed(
-                    telegraph=use_telegraph,
-                    alias=data["alias"],
-                    post_link=post_link,
-                    post_title=post_title,
-                    tags=entry.tags,
-                    summary=entry.summary or "",
-                )
+                if use_telegraph:
+                    msg_text, reply_markup = await asyncio.to_thread(
+                        lambda e=entry, pl=post_link, pt=post_title: feed_message.send_feed(
+                            telegraph=True,
+                            alias=data["alias"],
+                            post_link=pl,
+                            post_title=pt,
+                            tags=e.tags,
+                            summary=e.summary or "",
+                        )
+                    )
+                else:
+                    msg_text, reply_markup = feed_message.send_feed(
+                        telegraph=False,
+                        alias=data["alias"],
+                        post_link=post_link,
+                        post_title=post_title,
+                        tags=entry.tags,
+                        summary=entry.summary or "",
+                    )
 
                 await self.bot.bot.send_message(
                     chat_id=chat_id,
@@ -569,7 +702,7 @@ class Feedergraph(object):
         query = update.callback_query
 
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             data = query.data
             safe_alias = html.escape(str(data["alias"]))
             message = (
@@ -644,7 +777,7 @@ class Feedergraph(object):
         query = update.callback_query
 
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             effective_user = query.from_user
             chat_id = query.from_user.id
             data = query.data
@@ -672,7 +805,7 @@ class Feedergraph(object):
             )
 
     async def list(self, update, context):
-        """Shows all registered feeds with option to toggle link mode"""
+        """Shows all registered feeds (with link mode toggle for admins)"""
         chat_id = update.effective_chat.id
         entries = self.db.get_urls_for_user(telegram_id=chat_id)
 
@@ -683,16 +816,25 @@ class Feedergraph(object):
             )
             return
 
-        header_message = (
-            f"{bip_bop()}🤖! Here is the list of your subscriptions ❤️!\n"
-            "Click on a button to toggle between Normal Link and Telegraph:"
-        )
+        admin_user = is_admin(chat_id)
+        if admin_user:
+            header_message = (
+                f"{bip_bop()}🤖! Here is the list of your subscriptions ❤️!\n"
+                "Click on a button to toggle between Normal Link and Telegraph:"
+            )
+        else:
+            header_message = f"{bip_bop()}🤖! Here is the list of your subscriptions ❤️:"
+
         await update.effective_message.reply_text(header_message, parse_mode="HTML")
 
         for index, entry in enumerate(entries):
             is_telegraph = bool(entry[5]) if len(entry) > 5 else False
             item_msg, item_keyboard = list_handler(
-                db_telegraph=is_telegraph, alias=entry[1], url=entry[0], index=index
+                db_telegraph=is_telegraph,
+                alias=entry[1],
+                url=entry[0],
+                index=index,
+                allow_telegraph_toggle=admin_user,
             )
             await update.effective_message.reply_text(
                 text=item_msg,
@@ -722,7 +864,6 @@ class Feedergraph(object):
         """Shows information about the bot"""
         message = about_message(number=self.db.get_total_users(active_only=True))
         await update.effective_message.reply_text(text=message, parse_mode="HTML")
-
 
     async def export_feeds(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Exports all user subscriptions to an OPML file"""
@@ -792,7 +933,9 @@ class Feedergraph(object):
                     skipped += 1
                     continue
 
-                is_valid, _ = self.provider.validate_feed(formatted_url)
+                is_valid, _ = await asyncio.to_thread(
+                    self.provider.validate_feed, formatted_url
+                )
                 if is_valid:
                     alias = f"{random_emoji()} {title}" if title else f"{random_emoji()} {formatted_url}"
                     self.db.add_user_bookmark(telegram_id=chat_id, url=formatted_url, alias=alias, telegraph=False)
@@ -957,7 +1100,7 @@ class Feedergraph(object):
         """Generates and applies TL;DR by editing the feed message in-place"""
         query = update.callback_query
         if query is not None:
-            await query.answer("Generating summary...")
+            await self._safe_answer_query(query, "Generating summary...")
             data = query.data
             raw_title = data.get("title", "")
             raw_alias = data.get("alias", "Feed")
@@ -1034,7 +1177,7 @@ class Feedergraph(object):
         """Shows feeds for a specific category in preset catalog"""
         query = update.callback_query
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             cat = query.data.get("cat", "")
             msg_text, reply_markup = make_category_feeds_keyboard(cat)
             await query.edit_message_text(
@@ -1047,7 +1190,7 @@ class Feedergraph(object):
         """Returns to preset categories list"""
         query = update.callback_query
         if query is not None:
-            await query.answer()
+            await self._safe_answer_query(query)
             text = (
                 f"{bip_bop()} <b>Explore Popular Feeds</b>\n\n"
                 "Select a category to discover and add popular feeds with one click:"
@@ -1062,7 +1205,6 @@ class Feedergraph(object):
         """Adds selected preset feed with one click"""
         query = update.callback_query
         if query is not None:
-            await query.answer()
             chat_id = query.from_user.id
             data = query.data
             url = data.get("url", "")
@@ -1072,9 +1214,14 @@ class Feedergraph(object):
             user_entries = self.db.get_urls_for_user(telegram_id=chat_id)
             max_limit = get_max_feeds_limit(self.db)
             if max_limit > 0 and not is_admin(chat_id) and len(user_entries) >= max_limit:
-                await query.answer(f"⚠️ Limite di {max_limit} feed raggiunto! Rimuovine uno con /remove.", show_alert=True)
+                await self._safe_answer_query(
+                    query,
+                    f"⚠️ Limite di {max_limit} feed raggiunto! Rimuovine uno con /remove.",
+                    show_alert=True,
+                )
                 return
 
+            await self._safe_answer_query(query)
             if any(url == entry[0] for entry in user_entries):
                 await query.message.reply_text(
                     f"You are already subscribed to <b>{html.escape(name)}</b>!",
@@ -1086,24 +1233,28 @@ class Feedergraph(object):
                 telegram_id=chat_id, url=url, alias=alias, telegraph=False
             )
 
-            keyboard = [
-                [
-                    InlineKeyboardButton(
-                        "🔗 Change to Telegraph Link",
-                        callback_data={
-                            "option": "change_database",
-                            "alias": alias,
-                            "url": url,
-                            "set_telegraph": True,
-                        },
-                    )
+            reply_markup = None
+            if is_admin(chat_id):
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🔗 Change to Telegraph Link",
+                            callback_data={
+                                "option": "change_database",
+                                "alias": alias,
+                                "url": url,
+                                "set_telegraph": True,
+                            },
+                        )
+                    ]
                 ]
-            ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
             await query.message.reply_text(
                 f"🎉 Successfully added: <b>{html.escape(alias)}</b>!\n"
                 f"You will automatically receive notifications for new articles.",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard),
+                reply_markup=reply_markup,
             )
 
     async def admin_command(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1133,18 +1284,18 @@ class Feedergraph(object):
 
         user = query.from_user
         if not is_admin(user.id):
-            await query.answer("Non autorizzato.", show_alert=True)
+            await self._safe_answer_query(query, "Non autorizzato.", show_alert=True)
             return
 
         data = query.data
         action = data.get("action")
 
         if action == "noop":
-            await query.answer()
+            await self._safe_answer_query(query)
             return
 
         elif action == "show_menu":
-            await query.answer()
+            await self._safe_answer_query(query)
             stats = self.db.get_system_stats()
             current_limit = get_max_feeds_limit(self.db)
             text = format_admin_dashboard_message(stats, current_limit, user)
@@ -1155,7 +1306,7 @@ class Feedergraph(object):
             )
 
         elif action == "max_feeds_menu":
-            await query.answer()
+            await self._safe_answer_query(query)
             current_limit = get_max_feeds_limit(self.db)
             limit_str = "♾️ Illimitati" if current_limit == 0 else f"<b>{current_limit}</b>"
             msg = (
@@ -1175,7 +1326,7 @@ class Feedergraph(object):
             current = get_max_feeds_limit(self.db)
             new_limit = max(0, current + delta)
             set_max_feeds_limit(self.db, new_limit)
-            await query.answer(f"Nuovo limite: {'Illimitati' if new_limit == 0 else new_limit}")
+            await self._safe_answer_query(query, f"Nuovo limite: {'Illimitati' if new_limit == 0 else new_limit}")
             limit_str = "♾️ Illimitati" if new_limit == 0 else f"<b>{new_limit}</b>"
             msg = (
                 f"🔢 <b>Gestione Limite Feed per Utente</b>\n\n"
@@ -1193,7 +1344,7 @@ class Feedergraph(object):
             val = int(data.get("value", 15))
             new_limit = max(0, val)
             set_max_feeds_limit(self.db, new_limit)
-            await query.answer(f"Limite impostato a: {'Illimitati' if new_limit == 0 else new_limit}")
+            await self._safe_answer_query(query, f"Limite impostato a: {'Illimitati' if new_limit == 0 else new_limit}")
             limit_str = "♾️ Illimitati" if new_limit == 0 else f"<b>{new_limit}</b>"
             msg = (
                 f"🔢 <b>Gestione Limite Feed per Utente</b>\n\n"
@@ -1208,7 +1359,7 @@ class Feedergraph(object):
             )
 
         elif action == "prompt_broadcast":
-            await query.answer()
+            await self._safe_answer_query(query)
             context.user_data["admin_state"] = "waiting_broadcast"
             total_active = len(self.db.get_all_active_user_ids())
             msg = (
@@ -1224,7 +1375,7 @@ class Feedergraph(object):
             )
 
         elif action == "confirm_broadcast":
-            await query.answer("Invio broadcast avviato...")
+            await self._safe_answer_query(query, "Invio broadcast avviato...")
             broadcast_text = context.user_data.get("broadcast_pending")
             context.user_data["broadcast_pending"] = None
             context.user_data["admin_state"] = None
@@ -1270,7 +1421,7 @@ class Feedergraph(object):
             )
 
         elif action == "cancel_broadcast":
-            await query.answer("Broadcast annullato.")
+            await self._safe_answer_query(query, "Broadcast annullato.")
             context.user_data["broadcast_pending"] = None
             context.user_data["admin_state"] = None
             stats = self.db.get_system_stats()
@@ -1283,7 +1434,7 @@ class Feedergraph(object):
             )
 
         elif action == "system_stats":
-            await query.answer()
+            await self._safe_answer_query(query)
             stats = self.db.get_system_stats()
             provider_name = getattr(self.provider, "__class__", type(self.provider)).__name__
             interval = int(os.environ.get("UPDATE_INTERVAL", 300))
@@ -1295,7 +1446,7 @@ class Feedergraph(object):
             )
 
         elif action == "force_sync":
-            await query.answer("Sincronizzazione avviata in background!", show_alert=True)
+            await self._safe_answer_query(query, "Sincronizzazione avviata in background!", show_alert=True)
             if hasattr(self, "processing") and self.processing:
                 asyncio.create_task(self.processing.run())
             msg = (
@@ -1311,7 +1462,7 @@ class Feedergraph(object):
 
         elif action == "clean_orphaned":
             pruned = self.db.prune_orphaned_feeds()
-            await query.answer(f"Rimossi {pruned} feed orfani!")
+            await self._safe_answer_query(query, f"Rimossi {pruned} feed orfani!")
             msg = (
                 f"🧹 <b>Pulizia Database Completata!</b>\n\n"
                 f"• Feed orfani rimossi: <b>{pruned}</b>\n"
@@ -1324,7 +1475,7 @@ class Feedergraph(object):
             )
 
         elif action == "close":
-            await query.answer()
+            await self._safe_answer_query(query)
             await query.edit_message_text("🔒 <i>Dashboard amministratore chiusa.</i>", parse_mode="HTML")
 
     async def handle_menu_text(self, update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1392,5 +1543,3 @@ class Feedergraph(object):
 
 if __name__ == "__main__":
     Feedergraph(telegram_token=TELEGRAM_TOKEN, update_interval=UPDATE_INTERVAL)
-
-
